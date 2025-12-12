@@ -1,5 +1,7 @@
 # Fleeting Grace
 
+Generates nice looking 3 Body Problem simulations and turns them into 3D models for 3D printing
+
 [Fleeting Grace](https://github.com/isnotinvain/fleetig-grace) © 2025 by [Alexander Levenson](https://www.isnotinvain.com/) is licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 
 
