@@ -22,13 +22,13 @@ class ScoreFunction(ABC):
         """Human-readable name for this score function."""
         pass
 
-    def __add__(self, other: "ScoreFunction") -> "Sum":
+    def __add__(self, other: ScoreFunction) -> Sum:
         return Sum(self, other)
 
-    def __mul__(self, weight: float) -> "Weighted":
+    def __mul__(self, weight: float) -> Weighted:
         return Weighted((self, weight))
 
-    def __rmul__(self, weight: float) -> "Weighted":
+    def __rmul__(self, weight: float) -> Weighted:
         return Weighted((self, weight))
 
 
@@ -53,26 +53,20 @@ class Duration(ScoreFunction):
 class SpaceFilling(ScoreFunction):
     """Score based on how much of the bounding volume is filled by trajectories."""
 
-    def __init__(self, grid_resolution: int = 20, sample_stride: int = 100):
+    def __init__(self, grid_resolution: int = 20):
         """
         Args:
             grid_resolution: Grid divisions per axis (20 = 8000 voxels)
-            sample_stride: Sample every Nth point to speed up computation
         """
         self.grid_resolution = grid_resolution
-        self.sample_stride = sample_stride
 
     def score(self, sim_result: SimulationResult) -> float:
         trajectories = sim_result.trajectories
         if not trajectories or all(len(t) == 0 for t in trajectories):
             return 0.0
 
-        # Compute bounding box from all trajectory points
-        all_points = []
-        for traj in trajectories:
-            if len(traj) > 0:
-                # Sample every Nth point
-                all_points.append(traj[:: self.sample_stride])
+        # Trajectories are already simplified, just concatenate
+        all_points = [traj for traj in trajectories if len(traj) > 0]
 
         if not all_points:
             return 0.0
@@ -95,7 +89,7 @@ class SpaceFilling(ScoreFunction):
             occupied_cells.add(indices)
 
         # Coverage ratio
-        total_cells = self.grid_resolution ** 3
+        total_cells = self.grid_resolution**3
         coverage = len(occupied_cells) / total_cells
 
         return coverage
@@ -114,16 +108,16 @@ class Weighted(ScoreFunction):
     def score(self, sim_result: SimulationResult) -> float:
         return sum(fn.score(sim_result) * weight for fn, weight in self.pairs)
 
-    def __add__(self, other: "ScoreFunction") -> "Weighted":
+    def __add__(self, other: ScoreFunction) -> Weighted:
         if isinstance(other, Weighted):
             return Weighted(*self.pairs, *other.pairs)
         return Weighted(*self.pairs, (other, 1.0))
 
-    def __mul__(self, weight: float) -> "Weighted":
+    def __mul__(self, weight: float) -> Weighted:
         # Scale all weights
         return Weighted(*[(fn, w * weight) for fn, w in self.pairs])
 
-    def __rmul__(self, weight: float) -> "Weighted":
+    def __rmul__(self, weight: float) -> Weighted:
         return self.__mul__(weight)
 
     @property
@@ -141,7 +135,7 @@ class Sum(ScoreFunction):
     def score(self, sim_result: SimulationResult) -> float:
         return sum(fn.score(sim_result) for fn in self.fns)
 
-    def __add__(self, other: "ScoreFunction") -> "Sum":
+    def __add__(self, other: ScoreFunction) -> Sum:
         if isinstance(other, Sum):
             return Sum(*self.fns, *other.fns)
         return Sum(*self.fns, other)

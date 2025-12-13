@@ -2,11 +2,12 @@
 
 import argparse
 
-from fleeting_grace.config import OUTPUT_OBJ_FILE
+from fleeting_grace.config import MAX_RADIUS, OUTPUT_OBJ_FILE
 from fleeting_grace.export import write_trajectories_to_obj
 from fleeting_grace.preview import preview_simulation_grid, preview_trajectories_matplotlib
-from fleeting_grace.scoring import Duration, SpaceFilling, Weighted
+from fleeting_grace.scoring import SpaceFilling
 from fleeting_grace.search import format_simulation_info, random_search
+from fleeting_grace.termination import TrajectoryTooLarge
 
 
 def main():
@@ -18,10 +19,10 @@ def main():
     args = parser.parse_args()
 
     # Score function: balance duration and space-filling
-    score_fn = Weighted((Duration(), 0.3), (SpaceFilling(), 0.7))
+    score_fn = SpaceFilling()
 
     # Run random search
-    results = random_search(score_fn=score_fn, n_samples=args.n)
+    results = random_search(score_fn=score_fn, n_samples=args.n, termination=TrajectoryTooLarge(MAX_RADIUS))
     best_score, sim_result = results[0]  # Best result
 
     # Show grid of results (sorted by score)
