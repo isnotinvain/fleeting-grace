@@ -1,5 +1,7 @@
 """High-level search interface for finding optimal simulations."""
 
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 
 import numpy as np
@@ -123,6 +125,82 @@ def find_optimal_simulation(
     print(f"  Best fitness: {opt_result.best_fitness:.2f}")
 
     return best_result[0]
+
+
+def _run_one_simulation(args: tuple) -> tuple[float, SimulationResult]:
+    """Worker function for parallel simulation. Must be top-level for pickling."""
+    vec, termination, score_fn, max_steps = args
+    ic = InitialConditions.from_vector(vec, num_bodies=3)
+    sim_result = run_simulation(ic, termination, max_steps)
+    fitness = score_fn.score(sim_result)
+    return fitness, sim_result
+
+
+def random_search(
+    termination: TerminationCondition | None = None,
+    score_fn: ScoreFunction | None = None,
+    bounds: ICBounds | None = None,
+    max_steps: int = MAX_STEPS,
+    n_samples: int = 50,
+    n_workers: int | None = None,
+) -> list[tuple[float, SimulationResult]]:
+    """
+    Run random simulations in parallel and return sorted by score (best first).
+
+    Args:
+        termination: Condition for early termination (defaults to TrajectoryTooLarge)
+        score_fn: Function to compute fitness (defaults to Duration)
+        bounds: Initial condition bounds
+        max_steps: Max simulation steps
+        n_samples: Number of random simulations to run
+        n_workers: Number of parallel workers (defaults to CPU count)
+
+    Returns:
+        List of (score, SimulationResult) tuples sorted by score (best first)
+    """
+    if termination is None:
+        termination = TrajectoryTooLarge(MAX_RADIUS)
+
+    if score_fn is None:
+        score_fn = Duration(min_steps=MIN_STEPS_TARGET)
+
+    if bounds is None:
+        bounds = ICBounds()
+
+    if n_workers is None:
+        n_workers = os.cpu_count() or 4
+
+    lower, upper = bounds.to_si_bounds(num_bodies=3)
+    rng = np.random.default_rng()
+
+    # Generate all random initial condition vectors upfront
+    vecs = [rng.uniform(lower, upper) for _ in range(n_samples)]
+
+    print(f"Running {n_samples} random simulations on {n_workers} workers...")
+    print(f"Termination: {termination.name}")
+    print(f"Scoring: {score_fn.name}")
+    print()
+
+    # Run in parallel with progress reporting
+    args_list = [(vec, termination, score_fn, max_steps) for vec in vecs]
+    results_with_scores: list[tuple[float, SimulationResult]] = []
+
+    with ProcessPoolExecutor(max_workers=n_workers) as pool:
+        futures = [pool.submit(_run_one_simulation, args) for args in args_list]
+
+        for i, future in enumerate(as_completed(futures)):
+            fitness, result = future.result()
+            results_with_scores.append((fitness, result))
+            years = result.steps * DT / YEAR_SECONDS
+            print(f"  [{i + 1:3d}/{n_samples}] score={fitness:5.2f}  duration={years:5.1f}yr  outcome={result.reason}")
+
+    # Sort by score (highest first)
+    results_with_scores.sort(key=lambda x: x[0], reverse=True)
+
+    print(f"\nBest score: {results_with_scores[0][0]:.2f}")
+    print(f"Worst score: {results_with_scores[-1][0]:.2f}")
+
+    return results_with_scores
 
 
 def find_long_simulation_optimized(

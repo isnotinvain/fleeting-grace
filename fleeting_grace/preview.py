@@ -204,18 +204,29 @@ def _plot_simulation_on_axis(ax, sim_result: SimulationResult, show_bounding_sph
     ax.set_title(f"{duration_years:.1f}yr, {sim_result.reason}", fontsize=8)
 
 
-def preview_simulation_grid(sim_results: list[SimulationResult], title: str = "Simulations"):
+def preview_simulation_grid(
+    sim_results: list[SimulationResult] | list[tuple[float, SimulationResult]],
+    title: str = "Simulations",
+):
     """
     Show a 2x2 grid of simulation results with pagination and scroll zoom.
 
     Args:
-        sim_results: List of SimulationResult objects to display
+        sim_results: List of SimulationResult or (score, SimulationResult) tuples
         title: Window title
     """
-    n = len(sim_results)
-    if n == 0:
+    if len(sim_results) == 0:
         print("No simulations to display")
         return
+
+    # Handle both formats: list of results or list of (score, result) tuples
+    if isinstance(sim_results[0], tuple):
+        scores = [s for s, _ in sim_results]
+        sim_results = [r for _, r in sim_results]
+    else:
+        scores = None
+
+    n = len(sim_results)
 
     per_page = 4  # 2x2 grid
     total_pages = math.ceil(n / per_page)
@@ -265,6 +276,13 @@ def preview_simulation_grid(sim_results: list[SimulationResult], title: str = "S
             ax = fig.add_subplot(2, 2, i + 1, projection="3d")
             axes.append(ax)
             _plot_simulation_on_axis(ax, sim_result, show_bounding_sphere=True)
+
+            # Override title to include score if available
+            duration_years = sim_result.steps * DT / YEAR_SECONDS
+            if scores is not None:
+                ax.set_title(f"#{global_idx + 1} score={scores[global_idx]:.2f} | {duration_years:.1f}yr", fontsize=8)
+            else:
+                ax.set_title(f"#{global_idx + 1} | {duration_years:.1f}yr, {sim_result.reason}", fontsize=8)
 
             # Add save button below each plot
             bbox = ax.get_position()
