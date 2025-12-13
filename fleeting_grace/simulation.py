@@ -8,13 +8,13 @@ import numpy as np
 
 from fleeting_grace.config import (
     AU,
-    BODY_DENSITY,
     BOUNDING_BOX,
     DT,
     MASS_RANGE_SOLAR,
     PLOT_POINTS,
     POSITION_RANGE_AU,
     SOLAR_MASS,
+    SOLAR_RADIUS,
     VELOCITY_RANGE_KMS,
     G,
 )
@@ -104,8 +104,9 @@ class ICBounds:
 
 
 def compute_body_radius(mass_kg: float) -> float:
-    """Compute body radius from mass using fixed density: r = (3m / 4πρ)^(1/3)."""
-    return (3 * mass_kg / (4 * np.pi * BODY_DENSITY)) ** (1 / 3)
+    """Compute stellar radius using mass-radius relation: R = R_sun * (M/M_sun)^0.8."""
+    mass_solar = mass_kg / SOLAR_MASS
+    return SOLAR_RADIUS * (mass_solar ** 0.8)
 
 
 def random_initial_conditions(num_bodies: int = 3, seed: int | None = None, bounds: ICBounds | None = None) -> InitialConditions:

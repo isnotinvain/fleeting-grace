@@ -20,16 +20,16 @@ DT = MAX_TIME_YEARS * YEAR_SECONDS / PLOT_POINTS  # Time step in seconds (~18935
 # =============================================================================
 BOUNDING_BOX = 150 * AU  # Escape detection threshold (meters)
 
-# Body density for radius calculation (unrealistic but gives visible sizes)
-# With this density: 100 M☉ → 5 AU radius, mass scales with volume
-BODY_DENSITY = 1.13e-04  # kg/m³
+# Stellar radius calculation (realistic)
+# Using mass-radius relation: R = R_sun * (M/M_sun)^0.8
+SOLAR_RADIUS = 7e8  # meters (radius of the sun)
 
 # =============================================================================
 # Initial Condition Ranges (user-facing units)
 # =============================================================================
 MASS_RANGE_SOLAR = (0.1, 150)  # Solar masses
 POSITION_RANGE_AU = (-35, 35)  # AU from origin (wider to accommodate body radii)
-VELOCITY_RANGE_KMS = (-7, 7)  # km/s
+VELOCITY_RANGE_KMS = (-20, 20)  # km/s (higher than ThreeBodyBot's ±7 to compensate for larger distances)
 
 # =============================================================================
 # Optimizer Settings

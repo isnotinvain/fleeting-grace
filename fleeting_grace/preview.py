@@ -47,9 +47,10 @@ def preview_trajectories_matplotlib(sim_result: SimulationResult):
         ax.plot(traj[:, 0], traj[:, 1], traj[:, 2], color=colors[i % len(colors)], label=f"Body {i + 1}", linewidth=0.5)
 
         # Draw spheres at start (wireframe) and end (solid) positions
+        # Visual scale factor (bodies are tiny at realistic radii)
         if masses is not None:
             radius_m = compute_body_radius(masses[i])
-            radius_au = radius_m / AU
+            radius_au = radius_m / AU * 25  # 25x visual inflation
             u = np.linspace(0, 2 * np.pi, 20)
             v = np.linspace(0, np.pi, 10)
 
