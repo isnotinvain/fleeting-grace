@@ -8,9 +8,8 @@ import numpy as np
 from fleeting_grace.config import (
     DT,
     MAX_OPTIMIZER_ITERATIONS,
+    MAX_STEPS,
     MIN_STEPS_TARGET,
-    PLOT_POINTS,
-    PROBE_STEPS,
     YEAR_SECONDS,
 )
 from fleeting_grace.criteria import Criterion, MinDurationCriterion
@@ -37,7 +36,7 @@ class SearchResult:
 def evaluate_simulation(
     initial_conditions: InitialConditions,
     criterion: Criterion,
-    max_steps: int = PLOT_POINTS,
+    max_steps: int = MAX_STEPS,
     verbose: bool = False,
     max_trajectory_radius: float | None = None,
 ) -> tuple[float, SimulationResult]:
@@ -140,7 +139,7 @@ def find_optimal_simulation(
     optimizer: Optimizer,
     bounds: ICBounds | None = None,
     max_iterations: int = MAX_OPTIMIZER_ITERATIONS,
-    max_steps: int = PLOT_POINTS,
+    max_steps: int = MAX_STEPS,
 ) -> SimulationResult:
     """
     Find a simulation that optimizes the given criterion.
@@ -164,19 +163,17 @@ def find_optimal_simulation(
     # Track evaluation count and best result
     eval_count = [0]
     best_so_far = [float("-inf")]
-
-    # Create objective function with progress updates
-    # Use shorter probe simulations during optimization for speed
-    probe_steps = min(PROBE_STEPS, max_steps)
+    best_result = [None]
 
     def objective(vec: np.ndarray) -> float:
         eval_count[0] += 1
         ic = InitialConditions.from_vector(vec, num_bodies=3)
-        fitness, result = evaluate_simulation(ic, criterion, probe_steps)
+        fitness, result = evaluate_simulation(ic, criterion, max_steps)
 
         # Update best
         if fitness > best_so_far[0]:
             best_so_far[0] = fitness
+            best_result[0] = result
 
         # Show progress
         years = result.steps * DT / YEAR_SECONDS
@@ -191,18 +188,12 @@ def find_optimal_simulation(
     # Run optimization
     opt_result = optimizer.optimize(objective, (lower, upper), max_iterations)
 
-    # Reconstruct best initial conditions and run full simulation with verbose output
-    print("\nRunning final simulation with best parameters...")
-    best_ic = InitialConditions.from_vector(opt_result.best_vector, num_bodies=3)
-    _, sim_result = evaluate_simulation(best_ic, criterion, max_steps, verbose=True)
-    print()  # Clear the progress line
-
-    print("Optimization complete:")
+    print("\nOptimization complete:")
     print(f"  Iterations: {opt_result.iterations}")
     print(f"  Evaluations: {opt_result.evaluations}")
     print(f"  Best fitness: {opt_result.best_fitness:.2f}")
 
-    return sim_result
+    return best_result[0]
 
 
 def find_long_simulation_optimized(
@@ -232,7 +223,7 @@ def find_optimal_simulation_with_history(
     optimizer: Optimizer | None = None,
     bounds: ICBounds | None = None,
     max_iterations: int = MAX_OPTIMIZER_ITERATIONS,
-    max_steps: int = PLOT_POINTS,
+    max_steps: int = MAX_STEPS,
     n_random: int = 50,
     n_cmaes_starts: int = 1,
     cmaes_iterations: int = 10,
@@ -245,7 +236,7 @@ def find_optimal_simulation_with_history(
         optimizer: Optimizer to use (defaults to HybridOptimizer with given params)
         bounds: Initial condition bounds
         max_iterations: Max optimizer iterations
-        max_steps: Max simulation steps for final result
+        max_steps: Max simulation steps
         n_random: Number of random samples
         n_cmaes_starts: Number of CMA-ES refinement runs
         cmaes_iterations: Iterations per CMA-ES run
@@ -261,7 +252,6 @@ def find_optimal_simulation_with_history(
 
     # Get SI unit bounds
     lower, upper = bounds.to_si_bounds(num_bodies=3)
-    probe_steps = min(PROBE_STEPS, max_steps)
 
     # Storage for all results
     random_results: list[SimulationResult] = []
@@ -275,7 +265,7 @@ def find_optimal_simulation_with_history(
     def objective(vec: np.ndarray) -> float:
         eval_count[0] += 1
         ic = InitialConditions.from_vector(vec, num_bodies=3)
-        fitness, result = evaluate_simulation(ic, criterion, probe_steps)
+        fitness, result = evaluate_simulation(ic, criterion, max_steps)
 
         # Store result in appropriate phase list
         if current_phase[0] == "random":
@@ -346,18 +336,12 @@ def find_optimal_simulation_with_history(
 
         print(f"    CMA-ES run {i + 1} complete: fitness={-es.result.fbest:.2f}")
 
-    # Run full simulation with best parameters
-    print("\nRunning final simulation with best parameters...")
-    best_ic = best_result[0].initial_conditions
-    _, final_result = evaluate_simulation(best_ic, criterion, max_steps, verbose=True)
-    print()
-
-    duration_years = final_result.steps * DT / YEAR_SECONDS
-    print(f"Search complete: {len(random_results)} random + {len(optimizer_results)} optimizer evaluations")
-    print(f"Best result: {duration_years:.1f} years, {final_result.reason}")
+    duration_years = best_result[0].steps * DT / YEAR_SECONDS
+    print(f"\nSearch complete: {len(random_results)} random + {len(optimizer_results)} optimizer evaluations")
+    print(f"Best result: {duration_years:.1f} years, {best_result[0].reason}")
 
     return SearchResult(
-        best=final_result,
+        best=best_result[0],
         random_phase=random_results,
         optimizer_phase=optimizer_results,
     )

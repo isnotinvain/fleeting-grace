@@ -197,7 +197,7 @@ def _plot_simulation_on_axis(ax, sim_result: SimulationResult, show_bounding_sph
 
 def preview_simulation_grid(sim_results: list[SimulationResult], title: str = "Simulations"):
     """
-    Show a 3x3 grid of simulation results with pagination.
+    Show a 2x2 grid of simulation results with pagination and scroll zoom.
 
     Args:
         sim_results: List of SimulationResult objects to display
@@ -208,7 +208,7 @@ def preview_simulation_grid(sim_results: list[SimulationResult], title: str = "S
         print("No simulations to display")
         return
 
-    per_page = 9  # 3x3 grid
+    per_page = 4  # 2x2 grid
     total_pages = math.ceil(n / per_page)
     current_page = [0]  # Mutable container for closure
 
@@ -216,6 +216,22 @@ def preview_simulation_grid(sim_results: list[SimulationResult], title: str = "S
     axes = []
     save_buttons = []
     save_btn_axes = []
+
+    # Scroll wheel zoom for all 3D axes
+    def on_scroll(event):
+        for ax in axes:
+            if event.inaxes == ax:
+                scale = 1.2 if event.button == "down" else 1 / 1.2
+                xlim = ax.get_xlim()
+                ylim = ax.get_ylim()
+                zlim = ax.get_zlim()
+                ax.set_xlim([x * scale for x in xlim])
+                ax.set_ylim([y * scale for y in ylim])
+                ax.set_zlim([z * scale for z in zlim])
+                fig.canvas.draw_idle()
+                break
+
+    fig.canvas.mpl_connect("scroll_event", on_scroll)
 
     def render_page(page_num):
         # Clear previous content
@@ -235,10 +251,9 @@ def preview_simulation_grid(sim_results: list[SimulationResult], title: str = "S
 
         for i, sim_result in enumerate(page_results):
             global_idx = start_idx + i
-            row, col = divmod(i, 3)
 
-            # Create 3D subplot
-            ax = fig.add_subplot(3, 3, i + 1, projection="3d")
+            # Create 3D subplot in 2x2 grid
+            ax = fig.add_subplot(2, 2, i + 1, projection="3d")
             axes.append(ax)
             _plot_simulation_on_axis(ax, sim_result, show_bounding_sphere=True)
 

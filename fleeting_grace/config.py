@@ -11,9 +11,9 @@ YEAR_SECONDS = 365.25 * 24 * 3600  # seconds per year
 # =============================================================================
 # Simulation Parameters
 # =============================================================================
-MAX_TIME_YEARS = 60  # Maximum simulation duration in years
-PLOT_POINTS = 100_000  # Number of integration steps (coarser but faster)
-DT = MAX_TIME_YEARS * YEAR_SECONDS / PLOT_POINTS  # Time step in seconds (~18935s)
+MAX_TIME_YEARS = 20  # Maximum simulation duration in years
+MAX_STEPS = 33_000  # Number of integration steps
+DT = MAX_TIME_YEARS * YEAR_SECONDS / MAX_STEPS  # Time step in seconds
 
 # =============================================================================
 # Boundaries
@@ -40,9 +40,6 @@ HYBRID_CMAES_STARTS = 1  # Number of CMA-ES runs from best random samples
 HYBRID_CMAES_ITERATIONS = 10  # Iterations per CMA-ES run
 MAX_OPTIMIZER_ITERATIONS = 100  # Total optimization iterations
 
-# During optimization, use shorter "probe" simulations for speed
-# Full simulation only runs for the final best result
-PROBE_STEPS = 33_000  # ~20 years - enough to see if it's promising
 
 # =============================================================================
 # Criterion Settings

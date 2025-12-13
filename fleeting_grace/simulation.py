@@ -11,7 +11,7 @@ from fleeting_grace.config import (
     BOUNDING_BOX,
     DT,
     MASS_RANGE_SOLAR,
-    PLOT_POINTS,
+    MAX_STEPS,
     POSITION_RANGE_AU,
     SOLAR_MASS,
     SOLAR_RADIUS,
@@ -221,7 +221,7 @@ class TrajectoryBounds:
 
 def simulate_three_body(
     initial_conditions: InitialConditions | None = None,
-    max_steps: int = PLOT_POINTS,
+    max_steps: int = MAX_STEPS,
     seed: int | None = None,
     bounds: ICBounds | None = None,
     max_trajectory_radius: float = BOUNDING_BOX,
