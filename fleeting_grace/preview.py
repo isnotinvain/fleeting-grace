@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (needed to activate 3D)
 
-from fleeting_grace.config import AU, DT, YEAR_SECONDS
+from fleeting_grace.config import AU, BOUNDING_BOX, DT, YEAR_SECONDS
 from fleeting_grace.simulation import SimulationResult
 
 
@@ -43,6 +43,15 @@ def preview_trajectories_matplotlib(sim_result: SimulationResult):
     ax.set_xlim(centers[0] - max_range, centers[0] + max_range)
     ax.set_ylim(centers[1] - max_range, centers[1] + max_range)
     ax.set_zlim(centers[2] - max_range, centers[2] + max_range)
+
+    # Draw bounding sphere wireframe
+    bounding_radius_au = BOUNDING_BOX / AU
+    u = np.linspace(0, 2 * np.pi, 20)
+    v = np.linspace(0, np.pi, 10)
+    x_sphere = bounding_radius_au * np.outer(np.cos(u), np.sin(v))
+    y_sphere = bounding_radius_au * np.outer(np.sin(u), np.sin(v))
+    z_sphere = bounding_radius_au * np.outer(np.ones(np.size(u)), np.cos(v))
+    ax.plot_wireframe(x_sphere, y_sphere, z_sphere, color="gray", alpha=0.1, linewidth=0.5)
 
     ax.set_xlabel("X (AU)")
     ax.set_ylabel("Y (AU)")

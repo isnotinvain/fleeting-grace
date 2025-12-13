@@ -5,7 +5,6 @@ import sys
 import numpy as np
 
 from fleeting_grace.config import (
-    DEFAULT_BOUNDING_RADIUS,
     DT,
     MAX_OPTIMIZER_ITERATIONS,
     MIN_STEPS_TARGET,
@@ -13,13 +12,14 @@ from fleeting_grace.config import (
     PROBE_STEPS,
     YEAR_SECONDS,
 )
-from fleeting_grace.criteria import BoundedSphereCriterion, Criterion
+from fleeting_grace.criteria import Criterion, MinDurationCriterion
 from fleeting_grace.optimizer import HybridOptimizer, Optimizer
 from fleeting_grace.simulation import (
     ICBounds,
     InitialConditions,
     SimulationResult,
     check_collision,
+    check_escape,
     compute_accelerations,
 )
 
@@ -89,13 +89,17 @@ def evaluate_simulation(
 
         positions, velocities, acc = new_positions, new_velocities, new_acc
 
-        # Check collision (separate from criterion)
+        # Check collision
         if check_collision(positions, masses):
             termination_reason = "collision"
             steps_run = step + 1
             break
 
-        # Note: We don't check escape here since criterion handles bounding
+        # Check escape (body left the bounding box)
+        if check_escape(positions):
+            termination_reason = "escape"
+            steps_run = step + 1
+            break
 
     else:
         # If we finished the loop without breaking
@@ -183,23 +187,22 @@ def find_optimal_simulation(
 
 def find_long_simulation_optimized(
     min_steps: int = MIN_STEPS_TARGET,
-    bounding_radius: float = DEFAULT_BOUNDING_RADIUS,
     max_iterations: int = MAX_OPTIMIZER_ITERATIONS,
 ) -> SimulationResult:
     """
     Convenience function: find a long-running simulation using hybrid optimization.
 
-    This is a drop-in replacement for the old find_long_simulation().
+    Simulations end naturally via collision or escape (leaving 150 AU bounding box).
+    Fitness is based purely on duration - longer is better.
 
     Args:
-        min_steps: Minimum target steps
-        bounding_radius: Sphere radius in meters
+        min_steps: Minimum target steps for bonus fitness
         max_iterations: Max optimizer iterations
 
     Returns:
         SimulationResult for the best simulation found
     """
-    criterion = BoundedSphereCriterion(radius=bounding_radius, min_steps=min_steps)
+    criterion = MinDurationCriterion(min_steps=min_steps)
     optimizer = HybridOptimizer()
     return find_optimal_simulation(criterion, optimizer, max_iterations=max_iterations)
 
