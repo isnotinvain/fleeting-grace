@@ -19,13 +19,16 @@ DT = MAX_TIME_YEARS * YEAR_SECONDS / PLOT_POINTS  # Time step in seconds (~18935
 # Boundaries
 # =============================================================================
 BOUNDING_BOX = 150 * AU  # Escape detection threshold (meters)
-# Collision radius is computed per-body based on mass: radius = mass^0.8 * 7e8 meters
+
+# Body density for radius calculation (unrealistic but gives visible sizes)
+# With this density: 100 M☉ → 5 AU radius, mass scales with volume
+BODY_DENSITY = 1.13e-04  # kg/m³
 
 # =============================================================================
 # Initial Condition Ranges (user-facing units)
 # =============================================================================
 MASS_RANGE_SOLAR = (0.1, 150)  # Solar masses
-POSITION_RANGE_AU = (-10, 10)  # AU from origin
+POSITION_RANGE_AU = (-35, 35)  # AU from origin (wider to accommodate body radii)
 VELOCITY_RANGE_KMS = (-7, 7)  # km/s
 
 # =============================================================================

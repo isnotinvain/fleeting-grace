@@ -8,6 +8,7 @@ import numpy as np
 
 from fleeting_grace.config import (
     AU,
+    BODY_DENSITY,
     BOUNDING_BOX,
     DT,
     MASS_RANGE_SOLAR,
@@ -102,10 +103,9 @@ class ICBounds:
         return lower, upper
 
 
-def compute_stellar_radius(mass_kg: float) -> float:
-    """Compute stellar radius from mass using ThreeBodyBot scaling: r = m^0.8 * 7e8 meters."""
-    mass_solar = mass_kg / SOLAR_MASS
-    return (mass_solar**0.8) * 7e8
+def compute_body_radius(mass_kg: float) -> float:
+    """Compute body radius from mass using fixed density: r = (3m / 4πρ)^(1/3)."""
+    return (3 * mass_kg / (4 * np.pi * BODY_DENSITY)) ** (1 / 3)
 
 
 def random_initial_conditions(num_bodies: int = 3, seed: int | None = None, bounds: ICBounds | None = None) -> InitialConditions:
@@ -166,13 +166,13 @@ def compute_accelerations(positions: np.ndarray, masses: np.ndarray) -> np.ndarr
 
 def check_collision(positions: np.ndarray, masses: np.ndarray) -> bool:
     """
-    Return True if any pair of bodies is closer than their combined stellar radii.
+    Return True if any pair of bodies is closer than their combined radii.
     """
     num_bodies = positions.shape[0]
     for i in range(num_bodies):
         for j in range(i + 1, num_bodies):
             dist = np.linalg.norm(positions[i] - positions[j])
-            collision_dist = compute_stellar_radius(masses[i]) + compute_stellar_radius(masses[j])
+            collision_dist = compute_body_radius(masses[i]) + compute_body_radius(masses[j])
             if dist < collision_dist:
                 return True
     return False

@@ -5,7 +5,7 @@ import numpy as np
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (needed to activate 3D)
 
 from fleeting_grace.config import AU, BOUNDING_BOX, DT, YEAR_SECONDS
-from fleeting_grace.simulation import SimulationResult
+from fleeting_grace.simulation import SimulationResult, compute_body_radius
 
 
 def preview_trajectories_matplotlib(sim_result: SimulationResult):
@@ -36,6 +36,9 @@ def preview_trajectories_matplotlib(sim_result: SimulationResult):
 
     colors = ["#e41a1c", "#377eb8", "#4daf4a"]  # Red, blue, green
 
+    # Get masses for body radius calculation
+    masses = sim_result.initial_conditions.masses if sim_result.initial_conditions else None
+
     # Plot each body's path (convert from meters to AU for display)
     for i, traj in enumerate(trajectories):
         if len(traj) == 0:
@@ -43,8 +46,24 @@ def preview_trajectories_matplotlib(sim_result: SimulationResult):
         traj = np.asarray(traj) / AU  # Convert to AU
         ax.plot(traj[:, 0], traj[:, 1], traj[:, 2], color=colors[i % len(colors)], label=f"Body {i + 1}", linewidth=0.5)
 
-        # Mark starting position
-        ax.scatter([traj[0, 0]], [traj[0, 1]], [traj[0, 2]], color=colors[i % len(colors)], s=50, marker="o")
+        # Draw spheres at start (wireframe) and end (solid) positions
+        if masses is not None:
+            radius_m = compute_body_radius(masses[i])
+            radius_au = radius_m / AU
+            u = np.linspace(0, 2 * np.pi, 20)
+            v = np.linspace(0, np.pi, 10)
+
+            # Wireframe at starting position
+            x_start = traj[0, 0] + radius_au * np.outer(np.cos(u), np.sin(v))
+            y_start = traj[0, 1] + radius_au * np.outer(np.sin(u), np.sin(v))
+            z_start = traj[0, 2] + radius_au * np.outer(np.ones(np.size(u)), np.cos(v))
+            ax.plot_wireframe(x_start, y_start, z_start, color=colors[i % len(colors)], alpha=0.5, linewidth=0.5)
+
+            # Solid sphere at ending position
+            x_end = traj[-1, 0] + radius_au * np.outer(np.cos(u), np.sin(v))
+            y_end = traj[-1, 1] + radius_au * np.outer(np.sin(u), np.sin(v))
+            z_end = traj[-1, 2] + radius_au * np.outer(np.ones(np.size(u)), np.cos(v))
+            ax.plot_surface(x_end, y_end, z_end, color=colors[i % len(colors)], alpha=0.8)
 
     # Draw bounding sphere wireframe
     bounding_radius_au = BOUNDING_BOX / AU
