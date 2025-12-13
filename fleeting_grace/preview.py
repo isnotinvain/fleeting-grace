@@ -277,10 +277,10 @@ def preview_simulation_grid(
             axes.append(ax)
             _plot_simulation_on_axis(ax, sim_result, show_bounding_sphere=True)
 
-            # Override title to include score if available
+            # Override title to include score and reason
             duration_years = sim_result.steps * DT / YEAR_SECONDS
             if scores is not None:
-                ax.set_title(f"#{global_idx + 1} score={scores[global_idx]:.2f} | {duration_years:.1f}yr", fontsize=8)
+                ax.set_title(f"#{global_idx + 1} score={scores[global_idx]:.2f} | {duration_years:.1f}yr, {sim_result.reason}", fontsize=8)
             else:
                 ax.set_title(f"#{global_idx + 1} | {duration_years:.1f}yr, {sim_result.reason}", fontsize=8)
 
