@@ -6,21 +6,26 @@ from dataclasses import dataclass
 import numpy as np
 
 from fleeting_grace.config import (
+    BOUNDING_BOX,
     DT,
     MAX_OPTIMIZER_ITERATIONS,
     MAX_STEPS,
     MIN_STEPS_TARGET,
     YEAR_SECONDS,
 )
-from fleeting_grace.criteria import Criterion, MinDurationCriterion
 from fleeting_grace.optimizer import HybridOptimizer, Optimizer
+from fleeting_grace.scoring import Duration, ScoreFunction, SpaceFilling, Weighted
 from fleeting_grace.simulation import (
     ICBounds,
     InitialConditions,
     SimulationResult,
-    TrajectoryBounds,
     check_collision,
     compute_accelerations,
+)
+from fleeting_grace.termination import (
+    Escape,
+    TerminationCondition,
+    TrajectoryTooLarge,
 )
 
 
@@ -35,29 +40,24 @@ class SearchResult:
 
 def evaluate_simulation(
     initial_conditions: InitialConditions,
-    criterion: Criterion,
+    termination: TerminationCondition,
+    score_fn: ScoreFunction,
     max_steps: int = MAX_STEPS,
     verbose: bool = False,
-    max_trajectory_radius: float | None = None,
 ) -> tuple[float, SimulationResult]:
     """
-    Run simulation with given initial conditions and evaluate against criterion.
+    Run simulation with given initial conditions and evaluate.
 
     Args:
         initial_conditions: Initial positions, velocities, masses
-        criterion: Criterion to evaluate against
+        termination: Condition for early termination
+        score_fn: Function to compute fitness score
         max_steps: Maximum integration steps
         verbose: Print progress updates during simulation
-        max_trajectory_radius: Stop if trajectory bounding sphere exceeds this
 
     Returns:
         (fitness, SimulationResult)
     """
-    from fleeting_grace.config import BOUNDING_BOX
-
-    if max_trajectory_radius is None:
-        max_trajectory_radius = BOUNDING_BOX
-
     positions = initial_conditions.positions.copy()
     velocities = initial_conditions.velocities.copy()
     masses = initial_conditions.masses.copy()
@@ -67,8 +67,8 @@ def evaluate_simulation(
     # Storage for trajectories
     trajectories = [[] for _ in range(num_bodies)]
 
-    # Track bounding sphere of all trajectory points
-    traj_bounds = TrajectoryBounds(max_radius=max_trajectory_radius)
+    # Reset termination condition state
+    termination.reset()
 
     # Initial accelerations
     acc = compute_accelerations(positions, masses)
@@ -86,19 +86,14 @@ def evaluate_simulation(
             years = step * DT / YEAR_SECONDS
             print(f"      Simulating... {pct}% ({years:.1f} years)    ", end="\r")
             sys.stdout.flush()
+
         # Record positions
         for i in range(num_bodies):
             trajectories[i].append(positions[i].copy())
 
-        # Add to trajectory bounds tracking and check limit
-        if traj_bounds.add_positions(positions):
-            termination_reason = "trajectory_too_large"
-            steps_run = step + 1
-            break
-
-        # Check if criterion wants to terminate
-        if criterion.should_terminate(positions, velocities, masses, step):
-            termination_reason = "criterion_terminated"
+        # Check termination condition
+        if termination.check(positions, velocities, masses, step):
+            termination_reason = termination.name
             steps_run = step + 1
             break
 
@@ -109,7 +104,7 @@ def evaluate_simulation(
 
         positions, velocities, acc = new_positions, new_velocities, new_acc
 
-        # Check collision
+        # Check collision (hardcoded)
         if check_collision(positions, masses):
             termination_reason = "collision"
             steps_run = step + 1
@@ -124,23 +119,25 @@ def evaluate_simulation(
     sim_result = SimulationResult(traj_arrays, termination_reason, steps_run, initial_conditions)
 
     # Compute final fitness
-    fitness = criterion.compute_fitness(sim_result)
+    fitness = score_fn.score(sim_result)
 
     return fitness, sim_result
 
 
 def find_optimal_simulation(
-    criterion: Criterion,
+    termination: TerminationCondition,
+    score_fn: ScoreFunction,
     optimizer: Optimizer,
     bounds: ICBounds | None = None,
     max_iterations: int = MAX_OPTIMIZER_ITERATIONS,
     max_steps: int = MAX_STEPS,
 ) -> SimulationResult:
     """
-    Find a simulation that optimizes the given criterion.
+    Find a simulation that optimizes the given score function.
 
     Args:
-        criterion: Criterion to optimize for
+        termination: Condition for early termination
+        score_fn: Function to compute fitness score
         optimizer: Optimizer to use
         bounds: Initial condition bounds (uses defaults if None)
         max_iterations: Maximum optimizer iterations
@@ -163,7 +160,7 @@ def find_optimal_simulation(
     def objective(vec: np.ndarray) -> float:
         eval_count[0] += 1
         ic = InitialConditions.from_vector(vec, num_bodies=3)
-        fitness, result = evaluate_simulation(ic, criterion, max_steps)
+        fitness, result = evaluate_simulation(ic, termination, score_fn, max_steps)
 
         # Update best
         if fitness > best_so_far[0]:
@@ -177,7 +174,8 @@ def find_optimal_simulation(
         return fitness
 
     print(f"Starting optimization with {optimizer.name}")
-    print(f"Criterion: {criterion.name}")
+    print(f"Termination: {termination.name}")
+    print(f"Scoring: {score_fn.name}")
     print()
 
     # Run optimization
@@ -198,7 +196,7 @@ def find_long_simulation_optimized(
     """
     Convenience function: find a long-running simulation using hybrid optimization.
 
-    Simulations end naturally via collision or escape (leaving 150 AU bounding box).
+    Simulations end via collision or trajectory leaving bounding sphere.
     Fitness is based purely on duration - longer is better.
 
     Args:
@@ -208,16 +206,16 @@ def find_long_simulation_optimized(
     Returns:
         SimulationResult for the best simulation found
     """
-    criterion = MinDurationCriterion(min_steps=min_steps)
+    termination = TrajectoryTooLarge(BOUNDING_BOX)
+    score_fn = Duration(min_steps=min_steps)
     optimizer = HybridOptimizer()
-    return find_optimal_simulation(criterion, optimizer, max_iterations=max_iterations)
+    return find_optimal_simulation(termination, score_fn, optimizer, max_iterations=max_iterations)
 
 
 def find_optimal_simulation_with_history(
-    criterion: Criterion | None = None,
-    optimizer: Optimizer | None = None,
+    termination: TerminationCondition | None = None,
+    score_fn: ScoreFunction | None = None,
     bounds: ICBounds | None = None,
-    max_iterations: int = MAX_OPTIMIZER_ITERATIONS,
     max_steps: int = MAX_STEPS,
     n_random: int = 50,
     n_cmaes_starts: int = 1,
@@ -227,10 +225,9 @@ def find_optimal_simulation_with_history(
     Find optimal simulation and return all intermediate results for visualization.
 
     Args:
-        criterion: Criterion to optimize for (defaults to MinDurationCriterion)
-        optimizer: Optimizer to use (defaults to HybridOptimizer with given params)
+        termination: Condition for early termination (defaults to TrajectoryTooLarge)
+        score_fn: Function to compute fitness (defaults to Duration)
         bounds: Initial condition bounds
-        max_iterations: Max optimizer iterations
         max_steps: Max simulation steps
         n_random: Number of random samples
         n_cmaes_starts: Number of CMA-ES refinement runs
@@ -239,8 +236,11 @@ def find_optimal_simulation_with_history(
     Returns:
         SearchResult with best simulation and all intermediate results
     """
-    if criterion is None:
-        criterion = MinDurationCriterion(min_steps=MIN_STEPS_TARGET)
+    if termination is None:
+        termination = TrajectoryTooLarge(BOUNDING_BOX)
+
+    if score_fn is None:
+        score_fn = Duration(min_steps=MIN_STEPS_TARGET)
 
     if bounds is None:
         bounds = ICBounds()
@@ -260,7 +260,7 @@ def find_optimal_simulation_with_history(
     def objective(vec: np.ndarray) -> float:
         eval_count[0] += 1
         ic = InitialConditions.from_vector(vec, num_bodies=3)
-        fitness, result = evaluate_simulation(ic, criterion, max_steps)
+        fitness, result = evaluate_simulation(ic, termination, score_fn, max_steps)
 
         # Store result in appropriate phase list
         if current_phase[0] == "random":
@@ -281,7 +281,8 @@ def find_optimal_simulation_with_history(
         return fitness
 
     print(f"Starting search with {n_random} random samples + CMA-ES refinement")
-    print(f"Criterion: {criterion.name}")
+    print(f"Termination: {termination.name}")
+    print(f"Scoring: {score_fn.name}")
     print()
 
     # Phase 1: Random sampling
