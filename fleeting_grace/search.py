@@ -64,9 +64,8 @@ def evaluate_simulation(
 
     num_bodies = len(masses)
 
-    # Storage for trajectories and criterion results
+    # Storage for trajectories
     trajectories = [[] for _ in range(num_bodies)]
-    step_results = []
 
     # Track bounding sphere of all trajectory points
     traj_bounds = TrajectoryBounds(max_radius=max_trajectory_radius)
@@ -97,12 +96,8 @@ def evaluate_simulation(
             steps_run = step + 1
             break
 
-        # Evaluate criterion at this step
-        result = criterion.evaluate_step(positions, velocities, masses, step)
-        step_results.append(result)
-
         # Check if criterion wants to terminate
-        if result.should_terminate:
+        if criterion.should_terminate(positions, velocities, masses, step):
             termination_reason = "criterion_terminated"
             steps_run = step + 1
             break
@@ -124,12 +119,12 @@ def evaluate_simulation(
         # If we finished the loop without breaking
         steps_run = max_steps
 
-    # Compute final fitness
-    fitness = criterion.compute_fitness(step_results, steps_run, termination_reason)
-
     # Convert trajectories to arrays
     traj_arrays = [np.array(t) for t in trajectories]
     sim_result = SimulationResult(traj_arrays, termination_reason, steps_run, initial_conditions)
+
+    # Compute final fitness
+    fitness = criterion.compute_fitness(sim_result)
 
     return fitness, sim_result
 

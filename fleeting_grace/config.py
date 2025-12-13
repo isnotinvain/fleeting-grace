@@ -11,9 +11,9 @@ YEAR_SECONDS = 365.25 * 24 * 3600  # seconds per year
 # =============================================================================
 # Simulation Parameters
 # =============================================================================
-MAX_TIME_YEARS = 20  # Maximum simulation duration in years
-MAX_STEPS = 33_000  # Number of integration steps
-DT = MAX_TIME_YEARS * YEAR_SECONDS / MAX_STEPS  # Time step in seconds
+MAX_TIME_YEARS = 60  # Maximum simulation duration in years
+DT = 5 * 3600  # Time step: 5 hours in seconds
+MAX_STEPS = int(MAX_TIME_YEARS * YEAR_SECONDS / DT)  # ~105,192 steps
 
 # =============================================================================
 # Boundaries
