@@ -1,6 +1,7 @@
 """High-level search interface for finding optimal simulations."""
 
 import sys
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -18,10 +19,19 @@ from fleeting_grace.simulation import (
     ICBounds,
     InitialConditions,
     SimulationResult,
+    TrajectoryBounds,
     check_collision,
-    check_escape,
     compute_accelerations,
 )
+
+
+@dataclass
+class SearchResult:
+    """Complete results from a search, including all intermediate simulations."""
+
+    best: SimulationResult
+    random_phase: list[SimulationResult]
+    optimizer_phase: list[SimulationResult]
 
 
 def evaluate_simulation(
@@ -29,6 +39,7 @@ def evaluate_simulation(
     criterion: Criterion,
     max_steps: int = PLOT_POINTS,
     verbose: bool = False,
+    max_trajectory_radius: float | None = None,
 ) -> tuple[float, SimulationResult]:
     """
     Run simulation with given initial conditions and evaluate against criterion.
@@ -38,10 +49,16 @@ def evaluate_simulation(
         criterion: Criterion to evaluate against
         max_steps: Maximum integration steps
         verbose: Print progress updates during simulation
+        max_trajectory_radius: Stop if trajectory bounding sphere exceeds this
 
     Returns:
         (fitness, SimulationResult)
     """
+    from fleeting_grace.config import BOUNDING_BOX
+
+    if max_trajectory_radius is None:
+        max_trajectory_radius = BOUNDING_BOX
+
     positions = initial_conditions.positions.copy()
     velocities = initial_conditions.velocities.copy()
     masses = initial_conditions.masses.copy()
@@ -51,6 +68,9 @@ def evaluate_simulation(
     # Storage for trajectories and criterion results
     trajectories = [[] for _ in range(num_bodies)]
     step_results = []
+
+    # Track bounding sphere of all trajectory points
+    traj_bounds = TrajectoryBounds(max_radius=max_trajectory_radius)
 
     # Initial accelerations
     acc = compute_accelerations(positions, masses)
@@ -72,6 +92,12 @@ def evaluate_simulation(
         for i in range(num_bodies):
             trajectories[i].append(positions[i].copy())
 
+        # Add to trajectory bounds tracking and check limit
+        if traj_bounds.add_positions(positions):
+            termination_reason = "trajectory_too_large"
+            steps_run = step + 1
+            break
+
         # Evaluate criterion at this step
         result = criterion.evaluate_step(positions, velocities, masses, step)
         step_results.append(result)
@@ -92,12 +118,6 @@ def evaluate_simulation(
         # Check collision
         if check_collision(positions, masses):
             termination_reason = "collision"
-            steps_run = step + 1
-            break
-
-        # Check escape (body left the bounding box)
-        if check_escape(positions):
-            termination_reason = "escape"
             steps_run = step + 1
             break
 
@@ -205,6 +225,142 @@ def find_long_simulation_optimized(
     criterion = MinDurationCriterion(min_steps=min_steps)
     optimizer = HybridOptimizer()
     return find_optimal_simulation(criterion, optimizer, max_iterations=max_iterations)
+
+
+def find_optimal_simulation_with_history(
+    criterion: Criterion | None = None,
+    optimizer: Optimizer | None = None,
+    bounds: ICBounds | None = None,
+    max_iterations: int = MAX_OPTIMIZER_ITERATIONS,
+    max_steps: int = PLOT_POINTS,
+    n_random: int = 50,
+    n_cmaes_starts: int = 1,
+    cmaes_iterations: int = 10,
+) -> SearchResult:
+    """
+    Find optimal simulation and return all intermediate results for visualization.
+
+    Args:
+        criterion: Criterion to optimize for (defaults to MinDurationCriterion)
+        optimizer: Optimizer to use (defaults to HybridOptimizer with given params)
+        bounds: Initial condition bounds
+        max_iterations: Max optimizer iterations
+        max_steps: Max simulation steps for final result
+        n_random: Number of random samples
+        n_cmaes_starts: Number of CMA-ES refinement runs
+        cmaes_iterations: Iterations per CMA-ES run
+
+    Returns:
+        SearchResult with best simulation and all intermediate results
+    """
+    if criterion is None:
+        criterion = MinDurationCriterion(min_steps=MIN_STEPS_TARGET)
+
+    if bounds is None:
+        bounds = ICBounds()
+
+    # Get SI unit bounds
+    lower, upper = bounds.to_si_bounds(num_bodies=3)
+    probe_steps = min(PROBE_STEPS, max_steps)
+
+    # Storage for all results
+    random_results: list[SimulationResult] = []
+    optimizer_results: list[SimulationResult] = []
+    current_phase = ["random"]  # Mutable container to track phase
+
+    eval_count = [0]
+    best_fitness = [float("-inf")]
+    best_result = [None]
+
+    def objective(vec: np.ndarray) -> float:
+        eval_count[0] += 1
+        ic = InitialConditions.from_vector(vec, num_bodies=3)
+        fitness, result = evaluate_simulation(ic, criterion, probe_steps)
+
+        # Store result in appropriate phase list
+        if current_phase[0] == "random":
+            random_results.append(result)
+        else:
+            optimizer_results.append(result)
+
+        # Track best
+        if fitness > best_fitness[0]:
+            best_fitness[0] = fitness
+            best_result[0] = result
+
+        # Show progress
+        years = result.steps * DT / YEAR_SECONDS
+        phase_label = "R" if current_phase[0] == "random" else "O"
+        print(f"  [{phase_label}{eval_count[0]:3d}] fitness={fitness:5.2f}  duration={years:5.1f}yr  outcome={result.reason}")
+
+        return fitness
+
+    print(f"Starting search with {n_random} random samples + CMA-ES refinement")
+    print(f"Criterion: {criterion.name}")
+    print()
+
+    # Phase 1: Random sampling
+    print(f"Phase 1: Random sampling ({n_random} samples)...")
+    rng = np.random.default_rng()
+    random_samples_with_fitness = []
+
+    for _ in range(n_random):
+        x = rng.uniform(lower, upper)
+        fitness = objective(x)
+        random_samples_with_fitness.append((x, fitness))
+
+    # Sort by fitness for CMA-ES starting points
+    random_samples_with_fitness.sort(key=lambda t: t[1], reverse=True)
+    best_random = random_samples_with_fitness[0][1]
+    print(f"\nBest from random sampling: fitness={best_random:.2f}")
+
+    # Phase 2: CMA-ES refinement
+    current_phase[0] = "optimizer"
+    print(f"\nPhase 2: CMA-ES refinement (top {n_cmaes_starts} candidates)...")
+
+    import cma
+
+    for i in range(min(n_cmaes_starts, len(random_samples_with_fitness))):
+        start_x, start_fitness = random_samples_with_fitness[i]
+        print(f"\n  CMA-ES run {i + 1}/{n_cmaes_starts} (starting from fitness={start_fitness:.2f}):")
+
+        bounds_range = np.mean(upper - lower)
+        sigma = 0.2 * bounds_range
+
+        opts = {
+            "bounds": [lower.tolist(), upper.tolist()],
+            "maxiter": cmaes_iterations,
+            "verbose": -9,
+            "seed": rng.integers(0, 2**31),
+        }
+
+        def neg_objective(x):
+            return -objective(x)
+
+        es = cma.CMAEvolutionStrategy(start_x, sigma, opts)
+
+        while not es.stop():
+            solutions = es.ask()
+            fitnesses = [neg_objective(x) for x in solutions]
+            es.tell(solutions, fitnesses)
+
+        print(f"    CMA-ES run {i + 1} complete: fitness={-es.result.fbest:.2f}")
+
+    # Run full simulation with best parameters
+    print("\nRunning final simulation with best parameters...")
+    best_ic = best_result[0].initial_conditions
+    _, final_result = evaluate_simulation(best_ic, criterion, max_steps, verbose=True)
+    print()
+
+    duration_years = final_result.steps * DT / YEAR_SECONDS
+    print(f"Search complete: {len(random_results)} random + {len(optimizer_results)} optimizer evaluations")
+    print(f"Best result: {duration_years:.1f} years, {final_result.reason}")
+
+    return SearchResult(
+        best=final_result,
+        random_phase=random_results,
+        optimizer_phase=optimizer_results,
+    )
 
 
 def format_simulation_info(result: SimulationResult) -> str:

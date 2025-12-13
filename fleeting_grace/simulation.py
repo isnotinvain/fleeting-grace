@@ -181,7 +181,7 @@ def check_collision(positions: np.ndarray, masses: np.ndarray) -> bool:
 
 def check_escape(positions: np.ndarray, bound: float = BOUNDING_BOX) -> bool:
     """
-    Return True if any body is outside the bounding sphere.
+    Return True if any body is outside the bounding sphere (legacy, origin-centered).
     """
     for pos in positions:
         if np.linalg.norm(pos) > bound:
@@ -189,11 +189,42 @@ def check_escape(positions: np.ndarray, bound: float = BOUNDING_BOX) -> bool:
     return False
 
 
+class TrajectoryBounds:
+    """
+    Tracks the bounding sphere of all trajectory points visited so far.
+    Uses bounding box for O(1) per-step updates.
+    """
+
+    def __init__(self, max_radius: float = BOUNDING_BOX):
+        self.max_radius = max_radius
+        self._min = np.full(3, np.inf)
+        self._max = np.full(3, -np.inf)
+
+    def add_positions(self, positions: np.ndarray) -> bool:
+        """Add positions and return True if limit exceeded."""
+        for pos in positions:
+            self._min = np.minimum(self._min, pos)
+            self._max = np.maximum(self._max, pos)
+        return self.current_radius > self.max_radius
+
+    @property
+    def current_radius(self) -> float:
+        """Current bounding sphere radius (half the bounding box diagonal)."""
+        diagonal = np.linalg.norm(self._max - self._min)
+        return diagonal / 2
+
+    @property
+    def center(self) -> np.ndarray:
+        """Center of bounding sphere (midpoint of bounding box)."""
+        return (self._min + self._max) / 2
+
+
 def simulate_three_body(
     initial_conditions: InitialConditions | None = None,
     max_steps: int = PLOT_POINTS,
     seed: int | None = None,
     bounds: ICBounds | None = None,
+    max_trajectory_radius: float = BOUNDING_BOX,
 ) -> SimulationResult:
     """
     Run one 3-body simulation and return the trajectories and stop reason.
@@ -203,6 +234,7 @@ def simulate_three_body(
         max_steps: Maximum integration steps
         seed: Random seed (only used if initial_conditions is None)
         bounds: ICBounds for random generation (only used if initial_conditions is None)
+        max_trajectory_radius: Stop if trajectory bounding sphere exceeds this
 
     Returns:
         SimulationResult with trajectories in meters
@@ -219,6 +251,9 @@ def simulate_three_body(
     # Trajectories: list of lists; we'll convert to arrays at the end
     traj = [[] for _ in range(num_bodies)]
 
+    # Track bounding sphere of all trajectory points
+    traj_bounds = TrajectoryBounds(max_radius=max_trajectory_radius)
+
     # Initial accelerations
     acc = compute_accelerations(positions, masses)
 
@@ -230,6 +265,12 @@ def simulate_three_body(
         for i in range(num_bodies):
             traj[i].append(positions[i].copy())
 
+        # Add to trajectory bounds tracking and check limit
+        if traj_bounds.add_positions(positions):
+            reason = "trajectory_too_large"
+            steps = step + 1
+            break
+
         # Velocity-Verlet integration
         new_positions = positions + velocities * DT + 0.5 * acc * (DT**2)
         new_acc = compute_accelerations(new_positions, masses)
@@ -240,11 +281,6 @@ def simulate_three_body(
         # Check termination conditions
         if check_collision(positions, masses):
             reason = "collision"
-            steps = step + 1
-            break
-
-        if check_escape(positions):
-            reason = "escaped_bounding_box"
             steps = step + 1
             break
 
