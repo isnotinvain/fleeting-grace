@@ -42,7 +42,7 @@ MAX_OPTIMIZER_ITERATIONS = 100  # Total optimization iterations
 
 # During optimization, use shorter "probe" simulations for speed
 # Full simulation only runs for the final best result
-PROBE_STEPS = 15_000  # ~9 years - enough to see if it's promising
+PROBE_STEPS = 33_000  # ~20 years - enough to see if it's promising
 
 # =============================================================================
 # Criterion Settings

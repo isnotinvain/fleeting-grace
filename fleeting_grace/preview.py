@@ -3,6 +3,7 @@
 import base64
 import math
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.widgets import Button
@@ -10,6 +11,9 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (needed to activate 3D)
 
 from fleeting_grace.config import AU, DT, YEAR_SECONDS
 from fleeting_grace.simulation import SimulationResult, compute_body_radius
+
+# Ensure toolbar is enabled to prevent matplotlib 3D bug with Python 3.14
+matplotlib.rcParams['toolbar'] = 'toolbar2'
 
 
 def _compute_trajectory_bounds(trajectories: list) -> tuple[np.ndarray, float]:
@@ -208,7 +212,7 @@ def preview_simulation_grid(sim_results: list[SimulationResult], title: str = "S
     total_pages = math.ceil(n / per_page)
     current_page = [0]  # Mutable container for closure
 
-    fig = plt.figure(figsize=(12, 10))
+    fig = plt.figure(figsize=(9, 8))
     axes = []
     save_buttons = []
     save_btn_axes = []
