@@ -3,17 +3,26 @@
 import base64
 import math
 
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.widgets import Button
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (needed to activate 3D)
+from mpl_toolkits.mplot3d import Axes3D, axes3d  # noqa: F401 (needed to activate 3D)
 
 from fleeting_grace.config import AU, DT, YEAR_SECONDS
 from fleeting_grace.simulation import SimulationResult, compute_body_radius
 
-# Ensure toolbar is enabled to prevent matplotlib 3D bug with Python 3.14
-matplotlib.rcParams['toolbar'] = 'toolbar2'
+# Patch matplotlib 3D axes to suppress toolbar bug with Python 3.14
+_original_button_release = axes3d.Axes3D._button_release
+
+
+def _patched_button_release(self, event):
+    try:
+        _original_button_release(self, event)
+    except (AttributeError, TypeError):
+        pass  # Ignore toolbar-related errors
+
+
+axes3d.Axes3D._button_release = _patched_button_release
 
 
 def _compute_trajectory_bounds(trajectories: list) -> tuple[np.ndarray, float]:
