@@ -12,11 +12,27 @@ def preview_trajectories_matplotlib(sim_result: SimulationResult):
     """
     Show a 3D Matplotlib preview of the trajectories.
     Coordinates are displayed in AU for readability.
+    Scroll wheel zooms in/out.
     """
     trajectories = sim_result.trajectories
 
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection="3d")
+
+    # Scroll wheel zoom
+    def on_scroll(event):
+        if event.inaxes != ax:
+            return
+        scale = 1.2 if event.button == "down" else 1 / 1.2
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        zlim = ax.get_zlim()
+        ax.set_xlim([x * scale for x in xlim])
+        ax.set_ylim([y * scale for y in ylim])
+        ax.set_zlim([z * scale for z in zlim])
+        fig.canvas.draw_idle()
+
+    fig.canvas.mpl_connect("scroll_event", on_scroll)
 
     colors = ["#e41a1c", "#377eb8", "#4daf4a"]  # Red, blue, green
 
@@ -30,32 +46,26 @@ def preview_trajectories_matplotlib(sim_result: SimulationResult):
         # Mark starting position
         ax.scatter([traj[0, 0]], [traj[0, 1]], [traj[0, 2]], color=colors[i % len(colors)], s=50, marker="o")
 
-    # Make axes roughly equal so orbits aren't squashed
-    all_points = np.vstack([np.asarray(t) / AU for t in trajectories])
-    mins = all_points.min(axis=0)
-    maxs = all_points.max(axis=0)
-    centers = 0.5 * (mins + maxs)
-    max_range = 0.5 * np.max(maxs - mins)
-
-    # Add some padding
-    max_range = max(max_range, 1.0)  # At least 1 AU range
-
-    ax.set_xlim(centers[0] - max_range, centers[0] + max_range)
-    ax.set_ylim(centers[1] - max_range, centers[1] + max_range)
-    ax.set_zlim(centers[2] - max_range, centers[2] + max_range)
-
     # Draw bounding sphere wireframe
     bounding_radius_au = BOUNDING_BOX / AU
-    u = np.linspace(0, 2 * np.pi, 20)
-    v = np.linspace(0, np.pi, 10)
+    u = np.linspace(0, 2 * np.pi, 30)
+    v = np.linspace(0, np.pi, 15)
     x_sphere = bounding_radius_au * np.outer(np.cos(u), np.sin(v))
     y_sphere = bounding_radius_au * np.outer(np.sin(u), np.sin(v))
     z_sphere = bounding_radius_au * np.outer(np.ones(np.size(u)), np.cos(v))
-    ax.plot_wireframe(x_sphere, y_sphere, z_sphere, color="gray", alpha=0.1, linewidth=0.5)
+    ax.plot_wireframe(x_sphere, y_sphere, z_sphere, color="gray", alpha=0.3, linewidth=0.5)
 
-    ax.set_xlabel("X (AU)")
-    ax.set_ylabel("Y (AU)")
-    ax.set_zlabel("Z (AU)")
+    # Set view to show full bounding sphere with padding
+    view_range = bounding_radius_au * 1.1
+    ax.set_xlim(-view_range, view_range)
+    ax.set_ylim(-view_range, view_range)
+    ax.set_zlim(-view_range, view_range)
+
+    # Equal aspect ratio so sphere looks like a sphere
+    ax.set_box_aspect([1, 1, 1])
+
+    # Hide axes and grid
+    ax.set_axis_off()
 
     # Calculate duration in years
     duration_years = sim_result.steps * DT / YEAR_SECONDS
