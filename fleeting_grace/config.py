@@ -1,22 +1,59 @@
-"""Configuration constants for the simulation."""
+"""Configuration constants for the simulation using real physical units."""
 
-# Tube / mesh export settings
-PATH_TUBE_RADIUS = 0.05  # Radius of the pipe around each path
-TUBE_SEGMENTS = 8  # Number of segments around the circle (8–16 is reasonable)
-PATH_SAMPLE_STRIDE = 10  # Use every Nth point to keep mesh size manageable
+# =============================================================================
+# Physical Constants
+# =============================================================================
+G = 6.67408e-11  # Gravitational constant (N*m^2/kg^2)
+SOLAR_MASS = 2e30  # kg per solar mass
+AU = 1.5e11  # meters per AU
+YEAR_SECONDS = 365.25 * 24 * 3600  # seconds per year
 
-G = 1.0  # Gravitational constant (arbitrary units)
-DT = 0.01  # Time step
-MAX_STEPS = 200_000  # Hard cap on number of integration steps **per simulation**
+# =============================================================================
+# Simulation Parameters
+# =============================================================================
+MAX_TIME_YEARS = 60  # Maximum simulation duration in years
+PLOT_POINTS = 100_000  # Number of integration steps (coarser but faster)
+DT = MAX_TIME_YEARS * YEAR_SECONDS / PLOT_POINTS  # Time step in seconds (~18935s)
 
-BOUNDING_BOX = 5  # Stop if |x|, |y|, or |z| exceeds this
-COLLISION_RADIUS = 0.05  # Consider bodies "collided" if closer than this
+# =============================================================================
+# Boundaries
+# =============================================================================
+BOUNDING_BOX = 150 * AU  # Escape detection threshold (meters)
+# Collision radius is computed per-body based on mass: radius = mass^0.8 * 7e8 meters
 
-POSITION_RANGE = 1.0  # Initial positions in [-POSITION_RANGE, POSITION_RANGE]
-VELOCITY_SCALE = 0.2  # Scale of initial random velocities
+# =============================================================================
+# Initial Condition Ranges (user-facing units)
+# =============================================================================
+MASS_RANGE_SOLAR = (0.1, 150)  # Solar masses
+POSITION_RANGE_AU = (-10, 10)  # AU from origin
+VELOCITY_RANGE_KMS = (-7, 7)  # km/s
+
+# =============================================================================
+# Optimizer Settings
+# =============================================================================
+CMAES_SIGMA0 = 0.3  # Initial step size for CMA-ES
+HYBRID_RANDOM_SAMPLES = 50  # Random samples before optimization
+HYBRID_CMAES_STARTS = 1  # Number of CMA-ES runs from best random samples
+HYBRID_CMAES_ITERATIONS = 10  # Iterations per CMA-ES run
+MAX_OPTIMIZER_ITERATIONS = 100  # Total optimization iterations
+
+# During optimization, use shorter "probe" simulations for speed
+# Full simulation only runs for the final best result
+PROBE_STEPS = 15_000  # ~9 years - enough to see if it's promising
+
+# =============================================================================
+# Criterion Settings
+# =============================================================================
+DEFAULT_BOUNDING_RADIUS = 100 * AU  # Default sphere radius for bounded criterion (meters)
+MIN_TIME_YEARS = 15  # Minimum desired simulation duration in years
+MIN_STEPS_TARGET = int(MIN_TIME_YEARS * YEAR_SECONDS / DT)  # Converted to steps
+EARLY_WEIGHT_DECAY = 0.9999  # Weight decay per step for early timestep emphasis
+
+# =============================================================================
+# Export Settings (Tube/mesh for 3D printing)
+# =============================================================================
+PATH_TUBE_RADIUS = 0.05 * AU  # Radius of the pipe around each path (meters)
+TUBE_SEGMENTS = 8  # Number of segments around the circle (8-16 is reasonable)
+PATH_SAMPLE_STRIDE = 100  # Use every Nth point to keep mesh size manageable
 
 OUTPUT_OBJ_FILE = "three_body_paths.obj"
-
-# Search parameters
-MIN_STEPS_TARGET = 3_000  # We want a trajectory surviving at least this many steps
-MAX_ATTEMPTS = 100  # Max number of random tries before giving up
