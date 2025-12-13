@@ -29,6 +29,7 @@ class SimulationResult:
     reason: str  # reason for termination
     steps: int  # number of integration steps performed
     initial_conditions: InitialConditions | None = None  # the ICs that produced this result
+    score_breakdown: dict[str, float] | None = None  # individual component scores
 
 
 @dataclass

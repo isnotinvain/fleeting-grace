@@ -5,7 +5,7 @@ import argparse
 from fleeting_grace.config import MAX_RADIUS, OUTPUT_OBJ_FILE
 from fleeting_grace.export import write_trajectories_to_obj
 from fleeting_grace.preview import preview_simulation_grid, preview_trajectories_matplotlib
-from fleeting_grace.scoring import SpaceFilling
+from fleeting_grace.scoring import Complexity, CurvatureVariance, DirectionEntropy, Interweaving, Tortuosity
 from fleeting_grace.search import format_simulation_info, random_search
 from fleeting_grace.termination import TrajectoryTooLarge
 
@@ -18,8 +18,14 @@ def main():
     parser.add_argument("-n", type=int, default=50, help="Number of random simulations (default: 50)")
     args = parser.parse_args()
 
-    # Score function: balance duration and space-filling
-    score_fn = SpaceFilling()
+    # Score function: weighted combination of aesthetic metrics (all 0-1)
+    score_fn = (
+        0.20 * Tortuosity() +
+        0.20 * CurvatureVariance() +
+        0.20 * DirectionEntropy() +
+        0.20 * Interweaving() +
+        0.20 * Complexity()
+    )
 
     # Run random search
     results = random_search(score_fn=score_fn, n_samples=args.n, termination=TrajectoryTooLarge(MAX_RADIUS))

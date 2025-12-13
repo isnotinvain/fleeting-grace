@@ -232,8 +232,9 @@ def preview_simulation_grid(
     total_pages = math.ceil(n / per_page)
     current_page = [0]  # Mutable container for closure
 
-    fig = plt.figure(figsize=(9, 8))
+    fig = plt.figure(figsize=(10, 10))
     axes = []
+    bar_axes = []
     save_buttons = []
     save_btn_axes = []
 
@@ -257,9 +258,12 @@ def preview_simulation_grid(
         # Clear previous content
         for ax in axes:
             ax.remove()
+        for ax in bar_axes:
+            ax.remove()
         for btn_ax in save_btn_axes:
             btn_ax.remove()
         axes.clear()
+        bar_axes.clear()
         save_buttons.clear()
         save_btn_axes.clear()
 
@@ -272,8 +276,17 @@ def preview_simulation_grid(
         for i, sim_result in enumerate(page_results):
             global_idx = start_idx + i
 
-            # Create 3D subplot in 2x2 grid
-            ax = fig.add_subplot(2, 2, i + 1, projection="3d")
+            # Grid position: row 0-1, col 0-1
+            row, col = divmod(i, 2)
+
+            # Create 3D subplot (takes up most of the cell)
+            # Using manual positioning: [left, bottom, width, height]
+            left = 0.05 + col * 0.5
+            bottom = 0.52 - row * 0.48 + 0.12  # Leave room for bar chart below
+            width = 0.4
+            height = 0.32
+
+            ax = fig.add_axes([left, bottom, width, height], projection="3d")
             axes.append(ax)
             _plot_simulation_on_axis(ax, sim_result, show_bounding_sphere=True)
 
@@ -284,9 +297,37 @@ def preview_simulation_grid(
             else:
                 ax.set_title(f"#{global_idx + 1} | {duration_years:.1f}yr, {sim_result.reason}", fontsize=8)
 
-            # Add save button below each plot
-            bbox = ax.get_position()
-            btn_ax = fig.add_axes([bbox.x0, bbox.y0 - 0.03, bbox.width, 0.025])
+            # Add bar chart for score breakdown
+            if sim_result.score_breakdown:
+                bar_bottom = bottom - 0.10
+                bar_ax = fig.add_axes([left, bar_bottom, width, 0.08])
+                bar_axes.append(bar_ax)
+
+                names = list(sim_result.score_breakdown.keys())
+                values = list(sim_result.score_breakdown.values())
+
+                # Use short names for display
+                short_names = [n.replace("Variance", "Var").replace("Entropy", "Ent")
+                               .replace("weaving", "weave").replace("Complexity", "Complx")
+                               .replace("Tortuosity", "Tortuo") for n in names]
+
+                colors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00'][:len(names)]
+                bars = bar_ax.barh(range(len(names)), values, color=colors, height=0.7)
+                bar_ax.set_yticks(range(len(names)))
+                bar_ax.set_yticklabels(short_names, fontsize=6)
+                bar_ax.set_xlim(0, 1)
+                bar_ax.set_xticks([0, 0.5, 1])
+                bar_ax.tick_params(axis='x', labelsize=6)
+                bar_ax.invert_yaxis()  # Top-to-bottom order
+
+                # Add value labels on bars
+                for bar, val in zip(bars, values):
+                    bar_ax.text(val + 0.02, bar.get_y() + bar.get_height()/2,
+                               f'{val:.2f}', va='center', fontsize=5)
+
+            # Add save button below bar chart
+            btn_bottom = bottom - 0.13
+            btn_ax = fig.add_axes([left, btn_bottom, width, 0.02])
             save_btn_axes.append(btn_ax)
 
             def make_save_callback(sr, idx):
@@ -325,7 +366,6 @@ def preview_simulation_grid(
     next_btn.on_clicked(next_page)
 
     # Initial render
-    plt.subplots_adjust(top=0.93, bottom=0.08, hspace=0.35, wspace=0.2)
     render_page(0)
 
     plt.show()

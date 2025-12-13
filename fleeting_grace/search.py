@@ -132,7 +132,8 @@ def _run_one_simulation(args: tuple) -> tuple[float, SimulationResult]:
     vec, termination, score_fn, max_steps = args
     ic = InitialConditions.from_vector(vec, num_bodies=3)
     sim_result = run_simulation(ic, termination, max_steps)
-    fitness = score_fn.score(sim_result)
+    fitness, breakdown = score_fn.score_with_breakdown(sim_result)
+    sim_result.score_breakdown = breakdown
     return fitness, sim_result
 
 
