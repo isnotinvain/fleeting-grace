@@ -309,9 +309,10 @@ def preview_simulation_grid(
                 # Use short names for display
                 short_names = [n.replace("Variance", "Var").replace("Entropy", "Ent")
                                .replace("weaving", "weave").replace("Complexity", "Complx")
-                               .replace("Tortuosity", "Tortuo") for n in names]
+                               .replace("Tortuosity", "Tortuo").replace("TotalDistance", "TotDist")
+                               .replace("SweepingArcs", "Sweep") for n in names]
 
-                colors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00'][:len(names)]
+                colors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#a65628', '#f781bf'][:len(names)]
                 bars = bar_ax.barh(range(len(names)), values, color=colors, height=0.7)
                 bar_ax.set_yticks(range(len(names)))
                 bar_ax.set_yticklabels(short_names, fontsize=6)

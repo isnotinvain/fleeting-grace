@@ -457,6 +457,97 @@ class Complexity(ScoreFunction):
         return "Complexity"
 
 
+class SweepingArcs(ScoreFunction):
+    """Score based on sum of (segment_length × radius_of_curvature).
+
+    Rewards long paths at large radii. Tight loops contribute little,
+    big sweeping arcs contribute a lot.
+    """
+
+    def __init__(self, scale: float = 1e15):
+        """
+        Args:
+            scale: Sum value (m²) that maps to ~0.63. Default 1e15.
+        """
+        self.scale = scale
+
+    def score(self, sim_result: SimulationResult) -> float:
+        trajectories = sim_result.trajectories
+        if not trajectories:
+            return 0.0
+
+        total = 0.0
+        for traj in trajectories:
+            if len(traj) < 3:
+                continue
+            traj = np.asarray(traj)
+
+            # Segment lengths
+            segments = np.diff(traj, axis=0)
+            seg_lengths = np.linalg.norm(segments, axis=1)
+
+            # Curvature at interior points
+            v1 = traj[1:-1] - traj[:-2]
+            v2 = traj[2:] - traj[1:-1]
+
+            cross = np.cross(v1, v2)
+            cross_mag = np.linalg.norm(cross, axis=1)
+
+            v_mag = (np.linalg.norm(v1, axis=1) + np.linalg.norm(v2, axis=1)) / 2
+            v_mag = np.maximum(v_mag, 1e-10)
+
+            curvatures = cross_mag / (v_mag ** 2)
+            curvatures = np.maximum(curvatures, 1e-30)  # Avoid div by zero
+            radii = 1.0 / curvatures
+
+            # Cap radii to avoid infinity (straight lines)
+            radii = np.minimum(radii, 1e15)  # ~670 AU max
+
+            # Sum of (avg_segment_length × radius) for each interior point
+            for i, radius in enumerate(radii):
+                seg_len = (seg_lengths[i] + seg_lengths[i + 1]) / 2
+                total += seg_len * radius
+
+        return 1.0 - np.exp(-total / self.scale)
+
+    @property
+    def name(self) -> str:
+        return "SweepingArcs"
+
+
+class TotalDistance(ScoreFunction):
+    """Score based on total distance traveled by all bodies.
+
+    Sums path lengths across all trajectories, normalized by scale.
+    """
+
+    def __init__(self, scale: float = 1e14):
+        """
+        Args:
+            scale: Distance in meters that maps to ~0.63. Default 1e14 (~670 AU total).
+        """
+        self.scale = scale
+
+    def score(self, sim_result: SimulationResult) -> float:
+        trajectories = sim_result.trajectories
+        if not trajectories:
+            return 0.0
+
+        total_dist = 0.0
+        for traj in trajectories:
+            if len(traj) < 2:
+                continue
+            traj = np.asarray(traj)
+            segments = np.diff(traj, axis=0)
+            total_dist += np.sum(np.linalg.norm(segments, axis=1))
+
+        return 1.0 - np.exp(-total_dist / self.scale)
+
+    @property
+    def name(self) -> str:
+        return "TotalDistance"
+
+
 class Target(ScoreFunction):
     """Wrapper that rewards scores close to a target value.
 
