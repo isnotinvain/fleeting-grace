@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
-from fleeting_grace.config import AU, BOUNDING_BOX
+from fleeting_grace.config import AU, MAX_RADIUS
 
 
 class TerminationCondition(ABC):
@@ -31,32 +31,17 @@ class TerminationCondition(ABC):
         """Human-readable name for this condition."""
         pass
 
-    def __or__(self, other: "TerminationCondition") -> "Or":
+    def __or__(self, other: TerminationCondition) -> Or:
         return Or(self, other)
 
-    def __and__(self, other: "TerminationCondition") -> "And":
+    def __and__(self, other: TerminationCondition) -> And:
         return And(self, other)
-
-
-class Escape(TerminationCondition):
-    """Terminate if any body exceeds a distance from origin."""
-
-    def __init__(self, radius: float = BOUNDING_BOX):
-        self.radius = radius
-
-    def check(self, positions, velocities, masses, step) -> bool:
-        distances = np.linalg.norm(positions, axis=1)
-        return np.max(distances) > self.radius
-
-    @property
-    def name(self) -> str:
-        return f"Escape({self.radius / AU:.0f}AU)"
 
 
 class TrajectoryTooLarge(TerminationCondition):
     """Terminate if the bounding sphere of all trajectory points exceeds a radius."""
 
-    def __init__(self, radius: float = BOUNDING_BOX):
+    def __init__(self, radius: float = MAX_RADIUS):
         self.radius = radius
         self._bbox_min = np.full(3, np.inf)
         self._bbox_max = np.full(3, -np.inf)

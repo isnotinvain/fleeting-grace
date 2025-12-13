@@ -1,29 +1,26 @@
 """High-level search interface for finding optimal simulations."""
 
-import sys
 from dataclasses import dataclass
 
 import numpy as np
 
 from fleeting_grace.config import (
-    BOUNDING_BOX,
     DT,
     MAX_OPTIMIZER_ITERATIONS,
+    MAX_RADIUS,
     MAX_STEPS,
     MIN_STEPS_TARGET,
     YEAR_SECONDS,
 )
 from fleeting_grace.optimizer import HybridOptimizer, Optimizer
-from fleeting_grace.scoring import Duration, ScoreFunction, SpaceFilling, Weighted
+from fleeting_grace.scoring import Duration, ScoreFunction
 from fleeting_grace.simulation import (
     ICBounds,
     InitialConditions,
     SimulationResult,
-    check_collision,
-    compute_accelerations,
+    run_simulation,
 )
 from fleeting_grace.termination import (
-    Escape,
     TerminationCondition,
     TrajectoryTooLarge,
 )
@@ -58,69 +55,8 @@ def evaluate_simulation(
     Returns:
         (fitness, SimulationResult)
     """
-    positions = initial_conditions.positions.copy()
-    velocities = initial_conditions.velocities.copy()
-    masses = initial_conditions.masses.copy()
-
-    num_bodies = len(masses)
-
-    # Storage for trajectories
-    trajectories = [[] for _ in range(num_bodies)]
-
-    # Reset termination condition state
-    termination.reset()
-
-    # Initial accelerations
-    acc = compute_accelerations(positions, masses)
-
-    termination_reason = "max_steps_reached"
-    steps_run = 0
-
-    # Progress tracking
-    progress_interval = max(1, max_steps // 10)
-
-    for step in range(max_steps):
-        # Print progress
-        if verbose and step > 0 and step % progress_interval == 0:
-            pct = 100 * step // max_steps
-            years = step * DT / YEAR_SECONDS
-            print(f"      Simulating... {pct}% ({years:.1f} years)    ", end="\r")
-            sys.stdout.flush()
-
-        # Record positions
-        for i in range(num_bodies):
-            trajectories[i].append(positions[i].copy())
-
-        # Check termination condition
-        if termination.check(positions, velocities, masses, step):
-            termination_reason = termination.name
-            steps_run = step + 1
-            break
-
-        # Velocity-Verlet integration
-        new_positions = positions + velocities * DT + 0.5 * acc * (DT**2)
-        new_acc = compute_accelerations(new_positions, masses)
-        new_velocities = velocities + 0.5 * (acc + new_acc) * DT
-
-        positions, velocities, acc = new_positions, new_velocities, new_acc
-
-        # Check collision (hardcoded)
-        if check_collision(positions, masses):
-            termination_reason = "collision"
-            steps_run = step + 1
-            break
-
-    else:
-        # If we finished the loop without breaking
-        steps_run = max_steps
-
-    # Convert trajectories to arrays
-    traj_arrays = [np.array(t) for t in trajectories]
-    sim_result = SimulationResult(traj_arrays, termination_reason, steps_run, initial_conditions)
-
-    # Compute final fitness
+    sim_result = run_simulation(initial_conditions, termination, max_steps, verbose)
     fitness = score_fn.score(sim_result)
-
     return fitness, sim_result
 
 
@@ -206,7 +142,7 @@ def find_long_simulation_optimized(
     Returns:
         SimulationResult for the best simulation found
     """
-    termination = TrajectoryTooLarge(BOUNDING_BOX)
+    termination = TrajectoryTooLarge(MAX_RADIUS)
     score_fn = Duration(min_steps=min_steps)
     optimizer = HybridOptimizer()
     return find_optimal_simulation(termination, score_fn, optimizer, max_iterations=max_iterations)
@@ -237,7 +173,7 @@ def find_optimal_simulation_with_history(
         SearchResult with best simulation and all intermediate results
     """
     if termination is None:
-        termination = TrajectoryTooLarge(BOUNDING_BOX)
+        termination = TrajectoryTooLarge(MAX_RADIUS)
 
     if score_fn is None:
         score_fn = Duration(min_steps=MIN_STEPS_TARGET)

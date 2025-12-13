@@ -18,7 +18,7 @@ MAX_STEPS = int(MAX_TIME_YEARS * YEAR_SECONDS / DT)  # ~105,192 steps
 # =============================================================================
 # Boundaries
 # =============================================================================
-BOUNDING_BOX = 150 * AU  # Escape detection threshold (meters)
+MAX_RADIUS = 150 * AU  # Escape detection threshold (meters)
 
 # Stellar radius calculation (realistic)
 # Using mass-radius relation: R = R_sun * (M/M_sun)^0.8

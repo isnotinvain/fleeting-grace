@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 
 import numpy as np
 
 from fleeting_grace.config import (
     AU,
-    BOUNDING_BOX,
     DT,
     MASS_RANGE_SOLAR,
     MAX_STEPS,
@@ -16,8 +16,11 @@ from fleeting_grace.config import (
     SOLAR_MASS,
     SOLAR_RADIUS,
     VELOCITY_RANGE_KMS,
+    YEAR_SECONDS,
     G,
 )
+from fleeting_grace.simplify import simplify_trajectory
+from fleeting_grace.termination import TerminationCondition
 
 
 @dataclass
@@ -106,7 +109,7 @@ class ICBounds:
 def compute_body_radius(mass_kg: float) -> float:
     """Compute stellar radius using mass-radius relation: R = R_sun * (M/M_sun)^0.8."""
     mass_solar = mass_kg / SOLAR_MASS
-    return SOLAR_RADIUS * (mass_solar ** 0.8)
+    return SOLAR_RADIUS * (mass_solar**0.8)
 
 
 def random_initial_conditions(num_bodies: int = 3, seed: int | None = None, bounds: ICBounds | None = None) -> InitialConditions:
@@ -179,13 +182,80 @@ def check_collision(positions: np.ndarray, masses: np.ndarray) -> bool:
     return False
 
 
-def check_escape(positions: np.ndarray, bound: float = BOUNDING_BOX) -> bool:
+def run_simulation(
+    initial_conditions: InitialConditions,
+    termination: TerminationCondition,
+    max_steps: int = MAX_STEPS,
+    verbose: bool = False,
+) -> SimulationResult:
     """
-    Return True if any body is outside the bounding sphere (legacy, origin-centered).
+    Run a gravitational simulation with given initial conditions.
+
+    Args:
+        initial_conditions: Initial positions, velocities, masses
+        termination: Condition for early termination
+        max_steps: Maximum integration steps
+        verbose: Print progress updates during simulation
+
+    Returns:
+        SimulationResult with trajectories and termination info
     """
-    for pos in positions:
-        if np.linalg.norm(pos) > bound:
-            return True
-    return False
+    positions = initial_conditions.positions.copy()
+    velocities = initial_conditions.velocities.copy()
+    masses = initial_conditions.masses.copy()
 
+    num_bodies = len(masses)
 
+    # Storage for trajectories
+    trajectories = [[] for _ in range(num_bodies)]
+
+    # Reset termination condition state
+    termination.reset()
+
+    # Initial accelerations
+    acc = compute_accelerations(positions, masses)
+
+    termination_reason = "max_steps_reached"
+    steps_run = 0
+
+    # Progress tracking
+    progress_interval = max(1, max_steps // 10)
+
+    for step in range(max_steps):
+        # Print progress
+        if verbose and step > 0 and step % progress_interval == 0:
+            pct = 100 * step // max_steps
+            years = step * DT / YEAR_SECONDS
+            print(f"      Simulating... {pct}% ({years:.1f} years)    ", end="\r")
+            sys.stdout.flush()
+
+        # Record positions
+        for i in range(num_bodies):
+            trajectories[i].append(positions[i].copy())
+
+        # Check termination condition
+        if termination.check(positions, velocities, masses, step):
+            termination_reason = termination.name
+            steps_run = step + 1
+            break
+
+        # Velocity-Verlet integration
+        new_positions = positions + velocities * DT + 0.5 * acc * (DT**2)
+        new_acc = compute_accelerations(new_positions, masses)
+        new_velocities = velocities + 0.5 * (acc + new_acc) * DT
+
+        positions, velocities, acc = new_positions, new_velocities, new_acc
+
+        # Check collision (hardcoded)
+        if check_collision(positions, masses):
+            termination_reason = "collision"
+            steps_run = step + 1
+            break
+
+    else:
+        # If we finished the loop without breaking
+        steps_run = max_steps
+
+    # Convert trajectories to arrays and simplify
+    traj_arrays = [simplify_trajectory(np.array(t)) for t in trajectories]
+    return SimulationResult(traj_arrays, termination_reason, steps_run, initial_conditions)
