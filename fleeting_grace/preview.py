@@ -193,7 +193,7 @@ def _plot_simulation_on_axis(ax, sim_result: SimulationResult, show_bounding_sph
 
 def preview_simulation_grid(sim_results: list[SimulationResult], title: str = "Simulations"):
     """
-    Show a grid of simulation results, each with independent 3D rotation and a save button.
+    Show a 3x3 grid of simulation results with pagination.
 
     Args:
         sim_results: List of SimulationResult objects to display
@@ -204,45 +204,84 @@ def preview_simulation_grid(sim_results: list[SimulationResult], title: str = "S
         print("No simulations to display")
         return
 
-    # Calculate grid dimensions
-    cols = min(4, n)
-    rows = math.ceil(n / cols)
+    per_page = 9  # 3x3 grid
+    total_pages = math.ceil(n / per_page)
+    current_page = [0]  # Mutable container for closure
 
-    # Create figure with extra space for buttons
-    fig = plt.figure(figsize=(4 * cols, 4 * rows + 0.5 * rows))
-    fig.suptitle(title, fontsize=12)
-
+    fig = plt.figure(figsize=(12, 10))
     axes = []
-    buttons = []
+    save_buttons = []
+    save_btn_axes = []
 
-    for i, sim_result in enumerate(sim_results):
-        # Create 3D subplot - leave space at bottom for button
-        ax = fig.add_subplot(rows, cols, i + 1, projection="3d")
-        axes.append(ax)
+    def render_page(page_num):
+        # Clear previous content
+        for ax in axes:
+            ax.remove()
+        for btn_ax in save_btn_axes:
+            btn_ax.remove()
+        axes.clear()
+        save_buttons.clear()
+        save_btn_axes.clear()
 
-        _plot_simulation_on_axis(ax, sim_result, show_bounding_sphere=True)
+        start_idx = page_num * per_page
+        end_idx = min(start_idx + per_page, n)
+        page_results = sim_results[start_idx:end_idx]
 
-        # Add button below each plot
-        # Calculate button position based on subplot position
-        bbox = ax.get_position()
-        btn_ax = fig.add_axes([bbox.x0, bbox.y0 - 0.04, bbox.width, 0.03])
+        fig.suptitle(f"{title} (Page {page_num + 1}/{total_pages})", fontsize=12)
 
-        # Create callback that captures this simulation's data
-        def make_callback(sr, idx):
-            def callback(event):
-                print(f"\n{'='*60}")
-                print(f"Simulation {idx + 1} Initial Conditions")
-                print(f"{'='*60}")
-                print(f"Base64: {_serialize_initial_conditions(sr)}")
-                print(f"{'='*60}\n")
-            return callback
+        for i, sim_result in enumerate(page_results):
+            global_idx = start_idx + i
+            row, col = divmod(i, 3)
 
-        btn = Button(btn_ax, f"Save #{i+1}", color='lightgray', hovercolor='lightblue')
-        btn.on_clicked(make_callback(sim_result, i))
-        buttons.append(btn)  # Keep reference to prevent garbage collection
+            # Create 3D subplot
+            ax = fig.add_subplot(3, 3, i + 1, projection="3d")
+            axes.append(ax)
+            _plot_simulation_on_axis(ax, sim_result, show_bounding_sphere=True)
 
-    plt.tight_layout()
-    plt.subplots_adjust(top=0.95, bottom=0.05, hspace=0.3)
+            # Add save button below each plot
+            bbox = ax.get_position()
+            btn_ax = fig.add_axes([bbox.x0, bbox.y0 - 0.03, bbox.width, 0.025])
+            save_btn_axes.append(btn_ax)
+
+            def make_save_callback(sr, idx):
+                def callback(event):
+                    print(f"\n{'='*60}")
+                    print(f"Simulation {idx + 1} Initial Conditions")
+                    print(f"{'='*60}")
+                    print(f"Base64: {_serialize_initial_conditions(sr)}")
+                    print(f"{'='*60}\n")
+                return callback
+
+            btn = Button(btn_ax, f"Save #{global_idx + 1}", color='lightgray', hovercolor='lightblue')
+            btn.on_clicked(make_save_callback(sim_result, global_idx))
+            save_buttons.append(btn)
+
+        fig.canvas.draw_idle()
+
+    def next_page(event):
+        if current_page[0] < total_pages - 1:
+            current_page[0] += 1
+            render_page(current_page[0])
+
+    def prev_page(event):
+        if current_page[0] > 0:
+            current_page[0] -= 1
+            render_page(current_page[0])
+
+    # Navigation buttons at bottom
+    prev_ax = fig.add_axes([0.3, 0.01, 0.15, 0.03])
+    next_ax = fig.add_axes([0.55, 0.01, 0.15, 0.03])
+
+    prev_btn = Button(prev_ax, '< Previous', color='lightgray', hovercolor='lightblue')
+    next_btn = Button(next_ax, 'Next >', color='lightgray', hovercolor='lightblue')
+
+    prev_btn.on_clicked(prev_page)
+    next_btn.on_clicked(next_page)
+
+    # Initial render
+    plt.subplots_adjust(top=0.93, bottom=0.08, hspace=0.35, wspace=0.2)
+    render_page(0)
+
     plt.show()
 
-    return buttons  # Return to keep references alive
+    return prev_btn, next_btn, save_buttons  # Keep references alive
