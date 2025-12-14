@@ -4,7 +4,16 @@ import argparse
 
 from fleeting_grace.config import MAX_RADIUS, OUTPUT_OBJ_FILE
 from fleeting_grace.export import write_trajectories_to_obj
-from fleeting_grace.scoring import Complexity, CurvatureVariance, DirectionEntropy, Interweaving, SweepingArcs, TotalDistance, Tortuosity
+from fleeting_grace.scoring import (
+    Complexity,
+    CurvatureVariance,
+    DirectionEntropy,
+    Interweaving,
+    SpaceFilling,
+    SweepingArcs,
+    Tortuosity,
+    TotalDistance,
+)
 from fleeting_grace.search import format_simulation_info, random_search
 from fleeting_grace.termination import TrajectoryTooLarge
 from fleeting_grace.viewer import export_viewer_html
@@ -20,13 +29,14 @@ def main():
 
     # Score function: weighted combination of aesthetic metrics (all 0-1)
     score_fn = (
-        0.14 * Tortuosity() +
-        0.14 * CurvatureVariance() +
-        0.14 * DirectionEntropy() +
-        0.14 * Interweaving() +
-        0.14 * Complexity() +
-        0.14 * TotalDistance() +
-        0.14 * SweepingArcs()
+        0.0 * Tortuosity()
+        + 0.0 * CurvatureVariance()
+        + 0.0 * DirectionEntropy()
+        + 0.0 * Interweaving()
+        + 0.0 * Complexity()
+        + 0.0 * TotalDistance()
+        + 0.0 * SweepingArcs()
+        + 1.0 * SpaceFilling()
     )
 
     # Run random search

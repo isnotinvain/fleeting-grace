@@ -102,6 +102,239 @@ class RandomSearchOptimizer(Optimizer):
         return "RandomSearch"
 
 
+class LBFGSOptimizer(Optimizer):
+    """
+    L-BFGS-B optimizer using scipy.
+    Good for smooth-ish landscapes where gradients (via finite differences) are informative.
+    """
+
+    def __init__(
+        self,
+        ftol: float = 1e-6,
+        gtol: float = 1e-5,
+        maxfun: int | None = None,
+        seed: int | None = None,
+    ):
+        """
+        Args:
+            ftol: Function tolerance for convergence
+            gtol: Gradient tolerance for convergence
+            maxfun: Max function evaluations (None = 15000)
+            seed: Random seed for initial guess
+        """
+        self.ftol = ftol
+        self.gtol = gtol
+        self.maxfun = maxfun
+        self.seed = seed
+
+    def optimize(
+        self,
+        objective: Callable[[np.ndarray], float],
+        bounds: tuple[np.ndarray, np.ndarray],
+        max_iterations: int = 100,
+    ) -> OptimizationResult:
+        from scipy.optimize import minimize
+
+        lower, upper = bounds
+
+        # Generate random starting point within bounds
+        rng = np.random.default_rng(self.seed)
+        initial_guess = rng.uniform(lower, upper)
+
+        # Convert bounds to scipy format: list of (min, max) tuples
+        scipy_bounds = list(zip(lower, upper))
+
+        # Track evaluations
+        eval_count = [0]
+        best_fitness = [float("-inf")]
+        history = []
+
+        def neg_objective(x):
+            eval_count[0] += 1
+            fitness = objective(x)
+            history.append(fitness)
+            if fitness > best_fitness[0]:
+                best_fitness[0] = fitness
+            return -fitness  # scipy minimizes
+
+        options = {
+            "maxiter": max_iterations,
+            "ftol": self.ftol,
+            "gtol": self.gtol,
+        }
+        if self.maxfun:
+            options["maxfun"] = self.maxfun
+
+        result = minimize(
+            neg_objective,
+            initial_guess,
+            method="L-BFGS-B",
+            bounds=scipy_bounds,
+            options=options,
+        )
+
+        return OptimizationResult(
+            best_vector=result.x,
+            best_fitness=-result.fun,
+            iterations=result.nit,
+            evaluations=eval_count[0],
+            converged=result.success,
+            history=history,
+        )
+
+    @property
+    def name(self) -> str:
+        return "L-BFGS-B"
+
+
+class PowellOptimizer(Optimizer):
+    """
+    Powell's derivative-free direction-set method.
+    Good fallback when finite differences are too noisy.
+    """
+
+    def __init__(
+        self,
+        ftol: float = 1e-6,
+        seed: int | None = None,
+    ):
+        """
+        Args:
+            ftol: Function tolerance for convergence
+            seed: Random seed for initial guess
+        """
+        self.ftol = ftol
+        self.seed = seed
+
+    def optimize(
+        self,
+        objective: Callable[[np.ndarray], float],
+        bounds: tuple[np.ndarray, np.ndarray],
+        max_iterations: int = 100,
+    ) -> OptimizationResult:
+        from scipy.optimize import minimize
+
+        lower, upper = bounds
+
+        # Generate random starting point within bounds
+        rng = np.random.default_rng(self.seed)
+        initial_guess = rng.uniform(lower, upper)
+
+        # Convert bounds to scipy format
+        scipy_bounds = list(zip(lower, upper))
+
+        # Track evaluations
+        eval_count = [0]
+        history = []
+
+        def neg_objective(x):
+            eval_count[0] += 1
+            fitness = objective(x)
+            history.append(fitness)
+            return -fitness
+
+        options = {
+            "maxiter": max_iterations,
+            "ftol": self.ftol,
+        }
+
+        result = minimize(
+            neg_objective,
+            initial_guess,
+            method="Powell",
+            bounds=scipy_bounds,
+            options=options,
+        )
+
+        return OptimizationResult(
+            best_vector=result.x,
+            best_fitness=-result.fun,
+            iterations=result.nit,
+            evaluations=eval_count[0],
+            converged=result.success,
+            history=history,
+        )
+
+    @property
+    def name(self) -> str:
+        return "Powell"
+
+
+class DifferentialEvolutionOptimizer(Optimizer):
+    """
+    Differential Evolution - robust evolutionary algorithm.
+    Often competitive with CMA-ES on multimodal problems.
+    """
+
+    def __init__(
+        self,
+        strategy: str = "best1bin",
+        mutation: float = 0.8,
+        recombination: float = 0.7,
+        population_size: int = 15,
+        seed: int | None = None,
+    ):
+        """
+        Args:
+            strategy: DE strategy (best1bin, rand1bin, etc.)
+            mutation: Mutation constant [0, 2]
+            recombination: Recombination constant [0, 1]
+            population_size: Multiplier for population (actual = popsize * dimensions)
+            seed: Random seed
+        """
+        self.strategy = strategy
+        self.mutation = mutation
+        self.recombination = recombination
+        self.population_size = population_size
+        self.seed = seed
+
+    def optimize(
+        self,
+        objective: Callable[[np.ndarray], float],
+        bounds: tuple[np.ndarray, np.ndarray],
+        max_iterations: int = 100,
+    ) -> OptimizationResult:
+        from scipy.optimize import differential_evolution
+
+        lower, upper = bounds
+        scipy_bounds = list(zip(lower, upper))
+
+        # Track evaluations
+        eval_count = [0]
+        history = []
+
+        def neg_objective(x):
+            eval_count[0] += 1
+            fitness = objective(x)
+            history.append(fitness)
+            return -fitness
+
+        result = differential_evolution(
+            neg_objective,
+            scipy_bounds,
+            strategy=self.strategy,
+            mutation=self.mutation,
+            recombination=self.recombination,
+            popsize=self.population_size,
+            maxiter=max_iterations,
+            seed=self.seed,
+            disp=False,
+        )
+
+        return OptimizationResult(
+            best_vector=result.x,
+            best_fitness=-result.fun,
+            iterations=result.nit,
+            evaluations=eval_count[0],
+            converged=result.success,
+            history=history,
+        )
+
+    @property
+    def name(self) -> str:
+        return f"DifferentialEvolution({self.strategy})"
+
+
 class CMAESOptimizer(Optimizer):
     """
     CMA-ES (Covariance Matrix Adaptation Evolution Strategy) optimizer.

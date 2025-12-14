@@ -7,6 +7,8 @@ import numpy as np
 from fleeting_grace.config import DT, MIN_STEPS_TARGET, YEAR_SECONDS
 from fleeting_grace.simulation import SimulationResult
 
+# NOTE: maybe add convex hull volume as a score too
+
 
 class ScoreFunction(ABC):
     """Base class for simulation scoring functions."""
@@ -62,12 +64,17 @@ class Duration(ScoreFunction):
 
 
 class SpaceFilling(ScoreFunction):
-    """Score based on how much of the bounding volume is filled by trajectories."""
+    """Score based on how much of the bounding sphere is filled by trajectories.
 
-    def __init__(self, grid_resolution: int = 20):
+    Uses the actual bounding sphere of the trajectories (not a fixed sphere).
+    Measures how "sphere-shaped" the overall trajectory distribution is.
+    Samples along line segments to properly rasterize the trajectory paths.
+    """
+
+    def __init__(self, grid_resolution: int = 10):
         """
         Args:
-            grid_resolution: Grid divisions per axis (20 = 8000 voxels)
+            grid_resolution: Grid divisions per axis (7 = ~150 cells in sphere)
         """
         self.grid_resolution = grid_resolution
 
@@ -76,38 +83,74 @@ class SpaceFilling(ScoreFunction):
         if not trajectories or all(len(t) == 0 for t in trajectories):
             return 0.0
 
-        # Trajectories are already simplified, just concatenate
-        all_points = [traj for traj in trajectories if len(traj) > 0]
-
-        if not all_points:
+        valid_trajs = [np.asarray(traj) for traj in trajectories if len(traj) > 0]
+        if not valid_trajs:
             return 0.0
 
-        all_pts = np.concatenate(all_points, axis=0)
-        bbox_min = np.min(all_pts, axis=0)
-        bbox_max = np.max(all_pts, axis=0)
-        bbox_size = bbox_max - bbox_min
+        all_pts = np.concatenate(valid_trajs, axis=0)
 
-        # Handle degenerate cases
-        if np.any(bbox_size <= 0):
-            bbox_size = np.maximum(bbox_size, 1e-10)
+        # Compute bounding sphere using 95th percentile distance (not max)
+        # This avoids a single outlier point defining a huge mostly-empty sphere
+        center = np.mean(all_pts, axis=0)
+        distances = np.linalg.norm(all_pts - center, axis=1)
+        radius = np.percentile(distances, 95)
 
-        # Discretize into grid cells
+        if radius < 1e-10:
+            return 0.0
+
+        # Pre-compute which grid cells are fully inside the sphere
+        cells_in_sphere = set()
+        half_res = self.grid_resolution / 2
+        # Half-diagonal of a cell (to check if entire cell is inside sphere)
+        cell_half_diag = (1.0 / self.grid_resolution) * (3**0.5)
+        for ix in range(self.grid_resolution):
+            for iy in range(self.grid_resolution):
+                for iz in range(self.grid_resolution):
+                    # Cell center position (normalized to [-1, 1])
+                    cx = (ix + 0.5 - half_res) / half_res
+                    cy = (iy + 0.5 - half_res) / half_res
+                    cz = (iz + 0.5 - half_res) / half_res
+                    # Is entire cell inside unit sphere? (center + half-diagonal < 1)
+                    dist_from_center = (cx * cx + cy * cy + cz * cz) ** 0.5
+                    if dist_from_center + cell_half_diag <= 1.0:
+                        cells_in_sphere.add((ix, iy, iz))
+
+        total_cells_in_sphere = len(cells_in_sphere)
+        if total_cells_in_sphere == 0:
+            return 0.0
+
+        # Cell size in normalized coordinates
+        cell_size = 2.0 / self.grid_resolution
+
+        # Rasterize trajectory line segments into grid cells
         occupied_cells = set()
-        for pt in all_pts:
-            normalized = (pt - bbox_min) / bbox_size
-            normalized = np.clip(normalized, 0, 0.9999)
-            indices = tuple((normalized * self.grid_resolution).astype(int))
-            occupied_cells.add(indices)
+
+        for traj in valid_trajs:
+            for i in range(len(traj) - 1):
+                p1 = (traj[i] - center) / radius  # Normalize to [-1, 1]
+                p2 = (traj[i + 1] - center) / radius
+
+                # Sample along segment - use enough samples to hit every cell
+                segment_length = np.linalg.norm(p2 - p1)
+                n_samples = max(2, int(segment_length / cell_size * 2) + 1)
+
+                for t in np.linspace(0, 1, n_samples):
+                    pt = p1 + t * (p2 - p1)
+                    # Map to grid indices [0, grid_resolution)
+                    indices = ((pt + 1) * 0.5 * self.grid_resolution).astype(int)
+                    indices = np.clip(indices, 0, self.grid_resolution - 1)
+                    cell = tuple(indices)
+                    if cell in cells_in_sphere:
+                        occupied_cells.add(cell)
 
         # Coverage ratio
-        total_cells = self.grid_resolution**3
-        coverage = len(occupied_cells) / total_cells
+        coverage = len(occupied_cells) / total_cells_in_sphere
 
         return coverage
 
     @property
     def name(self) -> str:
-        return f"SpaceFilling(grid={self.grid_resolution}³)"
+        return "SpaceFilling"
 
 
 class Weighted(ScoreFunction):
