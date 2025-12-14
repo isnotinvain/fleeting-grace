@@ -422,6 +422,7 @@ def _generate_html(all_views_data: list[dict]) -> str:
 
         // Track objects we add so we can remove them
         let sceneObjects = [];
+        let initialCameraSet = false;
 
         // Lights for mesh rendering
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
@@ -454,7 +455,7 @@ def _generate_html(all_views_data: list[dict]) -> str:
             clearScene();
             const view = allViews[index];
 
-            // Update camera
+            // Update camera (only on first load, preserve angle/zoom otherwise)
             const center = view.center;
             const maxExtent = view.maxExtent;
 
@@ -462,13 +463,16 @@ def _generate_html(all_views_data: list[dict]) -> str:
             camera.near = maxExtent * 0.0001;
             camera.updateProjectionMatrix();
 
-            camera.position.set(
-                center[0] + maxExtent * 1.5,
-                center[1] + maxExtent * 1.2,
-                center[2] + maxExtent * 1.5
-            );
-            controls.target.set(center[0], center[1], center[2]);
-            controls.update();
+            if (!initialCameraSet) {{
+                camera.position.set(
+                    center[0] + maxExtent * 1.5,
+                    center[1] + maxExtent * 1.2,
+                    center[2] + maxExtent * 1.5
+                );
+                controls.target.set(center[0], center[1], center[2]);
+                controls.update();
+                initialCameraSet = true;
+            }}
 
             // Grid helper
             const gridSize = maxExtent * 2;
@@ -533,9 +537,9 @@ def _generate_html(all_views_data: list[dict]) -> str:
                 scene.add(line);
                 sceneObjects.push(line);
 
-                // Start sphere
-                const startGeom = new THREE.SphereGeometry(maxExtent * 0.02, 16, 16);
-                const startMat = new THREE.MeshBasicMaterial({{ color: colors[i % colors.length] }});
+                // Start sphere (wireframe)
+                const startGeom = new THREE.SphereGeometry(maxExtent * 0.02, 12, 8);
+                const startMat = new THREE.MeshBasicMaterial({{ color: colors[i % colors.length], wireframe: true }});
                 const startSphere = new THREE.Mesh(startGeom, startMat);
                 startSphere.position.copy(points[0]);
                 scene.add(startSphere);

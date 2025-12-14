@@ -19,26 +19,6 @@ from fleeting_grace.simulation import ICBounds, InitialConditions, run_simulatio
 from fleeting_grace.termination import TrajectoryTooLarge
 from fleeting_grace.viewer import export_viewer_html
 
-# Global variables for hill climber worker (needed for pickling)
-_hillclimb_termination = None
-_hillclimb_score_fn = None
-
-
-def _hillclimb_init_worker(termination, score_fn):
-    """Initialize worker process with required objects."""
-    global _hillclimb_termination, _hillclimb_score_fn
-    _hillclimb_termination = termination
-    _hillclimb_score_fn = score_fn
-
-
-def _hillclimb_eval_candidate(vec):
-    """Evaluate a single candidate (top-level for pickling)."""
-    ic = InitialConditions.from_vector(vec, num_bodies=3)
-    result = run_simulation(ic, _hillclimb_termination)
-    score, breakdown = _hillclimb_score_fn.score_with_breakdown(result)
-    result.score_breakdown = breakdown
-    return score, result, vec
-
 
 def main():
     parser = argparse.ArgumentParser(description="Find aesthetically interesting 3-body simulations")
@@ -127,11 +107,13 @@ def main():
             eps_positions = 0.1 * AU  # 0.1 AU per position component
             eps_velocities = 1000  # 1 km/s per velocity component
             eps_masses = 0.1 * SOLAR_MASS  # 0.1 solar masses
-            eps_vec = np.concatenate([
-                np.full(9, eps_positions),
-                np.full(9, eps_velocities),
-                np.full(3, eps_masses),
-            ])
+            eps_vec = np.concatenate(
+                [
+                    np.full(9, eps_positions),
+                    np.full(9, eps_velocities),
+                    np.full(3, eps_masses),
+                ]
+            )
 
             print(f"  Starting L-BFGS-B optimization (all params, max {args.optimize_iters} iterations)...")
 
@@ -164,22 +146,37 @@ def main():
 
         import numpy as np
 
-        from fleeting_grace.config import AU, SOLAR_MASS
+        from fleeting_grace.hillclimb_worker import eval_candidate, init_worker
 
         print(f"\nHill climbing from best result (score={results[0][0] if results else best_score:.3f})...")
 
-        # Perturbation scales (in SI units)
-        pos_scale = 0.5 * AU  # 0.5 AU
-        vel_scale = 2000  # 2 km/s
-        mass_scale = 0.5 * SOLAR_MASS  # 0.5 solar masses
-        scales = np.concatenate([
-            np.full(9, pos_scale),
-            np.full(9, vel_scale),
-            np.full(3, mass_scale),
-        ])
+        # Perturbation settings
+        angle_std = np.radians(0.4)
+        magnitude_std = 0.1
 
-        bounds = ICBounds()
-        lower, upper = bounds.to_si_bounds(num_bodies=3)
+        def perturb_velocity(vec, rng):
+            """Perturb one random body's velocity by angle or magnitude."""
+            new_vec = vec.copy()
+            body = rng.integers(0, 3)  # Pick random body
+            vel_start = 9 + body * 3  # Velocity indices: 9-11, 12-14, 15-17
+            vel = new_vec[vel_start : vel_start + 3].copy()
+
+            if rng.random() < 0.5:
+                # Perturb angle: rotate velocity by small angle around random axis
+                angle = rng.normal(0, angle_std)
+                axis = rng.normal(0, 1, size=3)
+                axis = axis / np.linalg.norm(axis)
+                # Rodrigues rotation formula
+                cos_a, sin_a = np.cos(angle), np.sin(angle)
+                vel_rotated = vel * cos_a + np.cross(axis, vel) * sin_a + axis * np.dot(axis, vel) * (1 - cos_a)
+                new_vec[vel_start : vel_start + 3] = vel_rotated
+            else:
+                # Perturb magnitude: scale speed by small factor
+                factor = 1 + rng.normal(0, magnitude_std)
+                factor = max(0.5, min(1.5, factor))  # Clamp to avoid extreme changes
+                new_vec[vel_start : vel_start + 3] = vel * factor
+
+            return new_vec
 
         current_vec = sim_result.initial_conditions.to_vector()
         current_score = best_score
@@ -189,7 +186,7 @@ def main():
         # Create pool with initializer to set globals in worker processes
         with ProcessPoolExecutor(
             max_workers=n_workers,
-            initializer=_hillclimb_init_worker,
+            initializer=init_worker,
             initargs=(termination, score_fn),
         ) as pool:
             for iteration in range(args.hillclimb_iters):
@@ -197,12 +194,11 @@ def main():
                 rng = np.random.default_rng()
                 candidates = []
                 for _ in range(n_workers):
-                    perturbation = rng.normal(0, 1, size=21) * scales
-                    new_vec = np.clip(current_vec + perturbation, lower, upper)
+                    new_vec = perturb_velocity(current_vec, rng)
                     candidates.append(new_vec)
 
                 # Evaluate all in parallel
-                futures = [pool.submit(_hillclimb_eval_candidate, c) for c in candidates]
+                futures = [pool.submit(eval_candidate, c) for c in candidates]
                 eval_results = [f.result() for f in futures]
 
                 # Find best
