@@ -74,7 +74,7 @@ class SpaceFilling(ScoreFunction):
     def __init__(self, grid_resolution: int = 10):
         """
         Args:
-            grid_resolution: Grid divisions per axis (7 = ~150 cells in sphere)
+            grid_resolution: Grid divisions per axis (10 = ~500 cells in sphere)
         """
         self.grid_resolution = grid_resolution
 
