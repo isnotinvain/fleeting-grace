@@ -13,6 +13,7 @@ from fleeting_grace.viewer import export_viewer_html
 def main():
     parser = argparse.ArgumentParser(description="Find aesthetically interesting 3-body simulations")
     parser.add_argument("--no-viewer", action="store_true", help="Skip opening Three.js viewer")
+    parser.add_argument("--mesh", action="store_true", help="Include 3D mesh views (tapered pipes) alongside line views")
     parser.add_argument("--no-export", action="store_true", help="Skip OBJ file export")
     parser.add_argument("-n", type=int, default=50, help="Number of random simulations (default: 50)")
     args = parser.parse_args()
@@ -44,7 +45,11 @@ def main():
 
     # Open Three.js viewer with all results
     if not args.no_viewer:
-        html_path = export_viewer_html(results, "trajectory_viewer.html")
+        html_path = export_viewer_html(
+            results,
+            "trajectory_viewer.html",
+            include_meshes=args.mesh,
+        )
         print(f"Three.js viewer: {html_path}")
 
 
