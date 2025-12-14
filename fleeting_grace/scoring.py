@@ -235,7 +235,7 @@ class CurvatureVariance(ScoreFunction):
             # Curvature = |v × a| / |v|³ where v=velocity, a=acceleration
             # Approximate with finite differences
             v1 = traj[1:-1] - traj[:-2]  # velocity before
-            v2 = traj[2:] - traj[1:-1]   # velocity after
+            v2 = traj[2:] - traj[1:-1]  # velocity after
 
             # Cross product magnitude (for curvature direction change)
             cross = np.cross(v1, v2)
@@ -246,7 +246,7 @@ class CurvatureVariance(ScoreFunction):
             v_mag = np.maximum(v_mag, 1e-10)
 
             # Curvature approximation
-            curvatures = cross_mag / (v_mag ** 2)
+            curvatures = cross_mag / (v_mag**2)
             all_curvatures.extend(curvatures)
 
         if len(all_curvatures) < 2:
@@ -320,7 +320,7 @@ class DirectionEntropy(ScoreFunction):
         bin_indices = theta_bins * self.n_bins + phi_bins
 
         # Count occurrences
-        counts = np.bincount(bin_indices, minlength=self.n_bins ** 2)
+        counts = np.bincount(bin_indices, minlength=self.n_bins**2)
         counts = counts[counts > 0]  # Only non-empty bins
 
         # Shannon entropy
@@ -328,7 +328,7 @@ class DirectionEntropy(ScoreFunction):
         entropy = -np.sum(probs * np.log(probs))
 
         # Normalize by max entropy (uniform distribution over all possible bins)
-        max_entropy = np.log(self.n_bins ** 2)
+        max_entropy = np.log(self.n_bins**2)
 
         return entropy / max_entropy if max_entropy > 0 else 0.0
 
@@ -496,7 +496,7 @@ class SweepingArcs(ScoreFunction):
             v_mag = (np.linalg.norm(v1, axis=1) + np.linalg.norm(v2, axis=1)) / 2
             v_mag = np.maximum(v_mag, 1e-10)
 
-            curvatures = cross_mag / (v_mag ** 2)
+            curvatures = cross_mag / (v_mag**2)
             curvatures = np.maximum(curvatures, 1e-30)  # Avoid div by zero
             radii = 1.0 / curvatures
 
