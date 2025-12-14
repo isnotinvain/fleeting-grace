@@ -8,11 +8,13 @@ from fleeting_grace.preview import preview_simulation_grid, preview_trajectories
 from fleeting_grace.scoring import Complexity, CurvatureVariance, DirectionEntropy, Interweaving, SweepingArcs, TotalDistance, Tortuosity
 from fleeting_grace.search import format_simulation_info, random_search
 from fleeting_grace.termination import TrajectoryTooLarge
+from fleeting_grace.viewer import export_viewer_html
 
 
 def main():
     parser = argparse.ArgumentParser(description="Find aesthetically interesting 3-body simulations")
     parser.add_argument("--preview", action="store_true", help="Show matplotlib 3D preview of best result")
+    parser.add_argument("--viewer", action="store_true", help="Open best result in Three.js web viewer")
     parser.add_argument("--no-grid", action="store_true", help="Skip grid view")
     parser.add_argument("--no-export", action="store_true", help="Skip OBJ file export")
     parser.add_argument("-n", type=int, default=50, help="Number of random simulations (default: 50)")
@@ -52,6 +54,11 @@ def main():
     if args.preview:
         print("Showing Matplotlib 3D preview window...")
         preview_trajectories_matplotlib(sim_result)
+
+    # Open Three.js viewer if requested
+    if args.viewer:
+        html_path = export_viewer_html(sim_result, "trajectory_viewer.html")
+        print(f"Three.js viewer exported to: {html_path}")
 
 
 if __name__ == "__main__":
