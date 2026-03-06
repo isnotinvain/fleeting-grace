@@ -4,6 +4,7 @@ import argparse
 
 from fleeting_grace.config import MAX_RADIUS, OUTPUT_OBJ_FILE
 from fleeting_grace.export import write_trajectories_to_obj
+from fleeting_grace.mesh import simulate_from_base64
 from fleeting_grace.scoring import (
     Complexity,
     CurvatureVariance,
@@ -20,18 +21,43 @@ from fleeting_grace.termination import TrajectoryTooLarge
 from fleeting_grace.viewer import export_viewer_html
 
 
+def _load_base64_file(path: str) -> list[str]:
+    """Load base64-encoded trajectory strings from a file, ignoring comments and blank lines."""
+    lines = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                lines.append(line)
+    return lines
+
+
 def main():
     parser = argparse.ArgumentParser(description="Find aesthetically interesting 3-body simulations")
     parser.add_argument("--no-viewer", action="store_true", help="Skip opening Three.js viewer")
     parser.add_argument("--mesh", action="store_true", help="Include 3D mesh views (tapered pipes) alongside line views")
     parser.add_argument("--no-export", action="store_true", help="Skip OBJ file export")
     parser.add_argument("-n", type=int, default=50, help="Number of random simulations (default: 50)")
+    parser.add_argument("--load", type=str, metavar="FILE", help="Load base64-encoded trajectories from a file (one per line, # comments ignored)")
+    parser.add_argument("--export-mesh", type=str, metavar="BASE64", help="Export a mesh from a single base64-encoded trajectory and exit")
+    parser.add_argument("--export-mesh-format", type=str, default="obj", choices=["obj", "stl"], help="Mesh export format (default: obj)")
+    parser.add_argument("--export-mesh-output", type=str, default=None, metavar="FILE", help="Mesh output path (default: trajectory_mesh.obj/stl)")
     parser.add_argument("--optimize", action="store_true", help="Run L-BFGS-B optimization from best random result")
     parser.add_argument("--optimize-iters", type=int, default=100, help="Max iterations for optimizer (default: 100)")
     parser.add_argument("--optimize-velocities-only", action="store_true", help="Only optimize velocities (faster, 9 params instead of 21)")
     parser.add_argument("--hillclimb", action="store_true", help="Run parallel hill climber from best random result")
     parser.add_argument("--hillclimb-iters", type=int, default=20, help="Hill climber iterations (default: 20)")
     args = parser.parse_args()
+
+    # Export mesh from a single base64 and exit
+    if args.export_mesh:
+        from fleeting_grace.mesh import create_mesh_from_base64
+
+        fmt = args.export_mesh_format
+        output = args.export_mesh_output or f"trajectory_mesh.{fmt}"
+        path = create_mesh_from_base64(args.export_mesh, output, format=fmt)
+        print(f"Mesh written to: {path}")
+        return
 
     # Score function: weighted combination of aesthetic metrics (all 0-1)
     score_fn = (
@@ -47,9 +73,22 @@ def main():
 
     termination = TrajectoryTooLarge(MAX_RADIUS)
 
-    # Run random search
-    results = random_search(score_fn=score_fn, n_samples=args.n, termination=termination)
-    best_score, sim_result = results[0]  # Best result
+    if args.load:
+        # Load and re-simulate from saved base64 trajectories
+        base64_lines = _load_base64_file(args.load)
+        print(f"Loading {len(base64_lines)} trajectories from {args.load}...")
+        results = []
+        for i, b64 in enumerate(base64_lines, 1):
+            sim_result = simulate_from_base64(b64)
+            score, breakdown = score_fn.score_with_breakdown(sim_result)
+            sim_result.score_breakdown = breakdown
+            results.append((score, sim_result))
+            print(f"  [{i}/{len(base64_lines)}] score={score:.4f}")
+        best_score, sim_result = results[0]
+    else:
+        # Run random search
+        results = random_search(score_fn=score_fn, n_samples=args.n, termination=termination)
+        best_score, sim_result = results[0]  # Best result
 
     # Optionally run optimizer from best result
     if args.optimize and sim_result.initial_conditions is not None:
