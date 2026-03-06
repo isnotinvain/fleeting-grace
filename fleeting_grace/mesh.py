@@ -19,10 +19,10 @@ class PipeSettings:
     of the body's actual radius. If proportional=False, they're absolute values.
     """
 
-    start_radius: float = 1.0  # Radius at start (multiplier if proportional, absolute otherwise)
-    end_radius: float = 0.1  # Radius at end (multiplier if proportional, absolute otherwise)
-    segments: int = 12  # Number of segments around the circumference
-    proportional: bool = True  # If True, radii are multiples of body radius
+    start_radius: float = 2  # Radius at start (multiplier if proportional, absolute otherwise)
+    end_radius: float = 2  # Radius at end (multiplier if proportional, absolute otherwise)
+    segments: int = 64  # Number of segments around the circumference
+    proportional: bool = False  # If True, radii are multiples of body radius
 
     @property
     def tapered(self) -> bool:
@@ -37,8 +37,8 @@ class SphereSettings:
     are scaled proportionally based on their actual body radii.
     """
 
-    max_size: float = 5.0  # Size of the largest sphere (in output units)
-    segments: int = 16  # Latitude/longitude segments
+    max_size: float = 10.0  # Size of the largest sphere (in output units)
+    segments: int = 64  # Latitude/longitude segments
     show_start: bool = True  # No sphere at trajectory start
     show_end: bool = True  # Sphere at trajectory end
 
@@ -390,9 +390,9 @@ def _material_name_for_mesh(mesh_name: str) -> str:
 
 # Colors matching the viewer: red, cyan, yellow
 _BODY_MATERIALS = {
-    "body_1": (1.0, 0.42, 0.42),   # #ff6b6b
-    "body_2": (0.31, 0.80, 0.77),   # #4ecdc4
-    "body_3": (1.0, 0.90, 0.43),    # #ffe66d
+    "body_1": (1.0, 0.42, 0.42),  # #ff6b6b
+    "body_2": (0.31, 0.80, 0.77),  # #4ecdc4
+    "body_3": (1.0, 0.90, 0.43),  # #ffe66d
 }
 
 

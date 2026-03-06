@@ -211,3 +211,7 @@ __marimo__/
 
 # Generated viewer
 trajectory_viewer.html
+
+# Generated meshes
+*.obj
+*.mtl
