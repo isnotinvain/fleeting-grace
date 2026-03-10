@@ -104,12 +104,12 @@ export function ResultsPage() {
             className="grid gap-4"
             style={{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)` }}
           >
-            {pageIndices.map((simIdx) => {
+            {pageIndices.map((simIdx, gridPos) => {
               const sim = simulations[simIdx];
               const scores = perMetricScores[simIdx];
               return (
                 <div
-                  key={simIdx}
+                  key={gridPos}
                   className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden"
                 >
                   {/* 3D scene */}
