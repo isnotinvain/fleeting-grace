@@ -1,5 +1,7 @@
 """Scoring functions for evaluating simulation quality."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 
 import numpy as np

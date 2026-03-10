@@ -365,40 +365,29 @@ def _truncate_start_at_sphere(
     return traj
 
 
-def _generate_shatter_mesh(
+def _generate_shatter_fragments(
     center: np.ndarray,
     radius: float,
-    impact_point: np.ndarray,
-    velocity: np.ndarray,
+    impact_dir_norm: np.ndarray,
     num_fragments: int = 10,
-    displacement_scale: float = 0.6,
-    gap_scale: float = 0.05,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Generate a shattered sphere — Voronoi chunks displaced from impact.
+    n_back: int = 3,
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Split a sphere into Voronoi chunks. Returns list of (verts, faces, centroid).
 
-    More seeds near impact = smaller fragments there, fewer on far side =
-    bigger chunks. Each chunk is a solid convex piece of the sphere.
+    More seeds near impact = smaller fragments. Back side gets n_back big chunks.
+    Vertices are in world coordinates, faces have consistent outward winding.
     """
     from scipy.spatial import ConvexHull, cKDTree
 
     rng = np.random.default_rng(hash(tuple(center)) & 0xFFFFFFFF)
 
-    # Impact direction
-    impact_dir = impact_point - center
-    impact_dist = np.linalg.norm(impact_dir)
-    impact_dir_norm = impact_dir / impact_dist if impact_dist > 0 else np.array([1.0, 0.0, 0.0])
-
-    # Voronoi seeds: 2-3 on the far side (big chunks with small crack),
-    # rest clustered near impact
     seeds = []
-    n_back = 3
     for _ in range(n_back):
         pt = rng.standard_normal(3)
         pt = pt / np.linalg.norm(pt)
         pt = pt - impact_dir_norm * 1.5
         pt = pt / np.linalg.norm(pt)
         seeds.append(center + pt * radius * 0.4)
-    # All remaining seeds clustered near impact
     for _ in range(num_fragments - n_back):
         pt = rng.standard_normal(3)
         pt = pt / np.linalg.norm(pt)
@@ -408,7 +397,6 @@ def _generate_shatter_mesh(
         seeds.append(center + pt * r)
     seeds = np.array(seeds)
 
-    # Dense point cloud filling the sphere
     n_pts = 5000
     pts = []
     for _ in range(n_pts):
@@ -418,109 +406,124 @@ def _generate_shatter_mesh(
         pts.append(center + p * r)
     pts = np.array(pts)
 
-    # Assign each point to nearest seed
     tree = cKDTree(seeds)
     _, cell_ids = tree.query(pts)
 
-    # Velocity direction
-    vel_mag = np.linalg.norm(velocity)
-    vel_dir = velocity / vel_mag if vel_mag > 0 else np.zeros(3)
-
-    all_verts = []
-    all_faces = []
-    offset = 0
-
+    fragments = []
     for cell_id in range(len(seeds)):
         cell_pts = pts[cell_ids == cell_id]
         if len(cell_pts) < 4:
             continue
-
         try:
             hull = ConvexHull(cell_pts)
         except Exception:
             continue
 
-        # Use the full point set as vertices, simplices index directly into it.
-        # Fix winding: ensure each face normal points outward (aligned with
-        # the hull equation normal).
         frag_verts = cell_pts
         frag_faces = hull.simplices.copy()
         for fi in range(len(frag_faces)):
             v0, v1, v2 = cell_pts[frag_faces[fi]]
             face_normal = np.cross(v1 - v0, v2 - v0)
-            # hull.equations[fi, :3] is the outward normal for this face
             if np.dot(face_normal, hull.equations[fi, :3]) < 0:
                 frag_faces[fi] = frag_faces[fi][::-1]
 
-        # Fragment center
-        frag_center = np.mean(frag_verts, axis=0)
+        centroid = np.mean(frag_verts, axis=0)
+        fragments.append((frag_verts, frag_faces, centroid))
 
-        # Back chunks get only a small crack, impact chunks get full ejection
-        if cell_id < n_back:
-            # Just a small gap to show a crack
-            gap_dir = frag_center - center
-            gap_norm = np.linalg.norm(gap_dir)
-            if gap_norm > 0:
-                displaced_verts = frag_verts + gap_dir / gap_norm * gap_scale * radius * 0.5
-            else:
-                displaced_verts = frag_verts
-        else:
-            # Ejection from impact point
-            dist_to_impact = np.linalg.norm(frag_center - impact_point)
-            proximity = max(0.0, 1.0 - dist_to_impact / (radius * 2))
-            proximity = proximity ** 0.5
+    return fragments
 
-            eject_dir = frag_center - impact_point
-            eject_norm = np.linalg.norm(eject_dir)
-            if eject_norm > 0:
-                eject_dir = eject_dir / eject_norm
-            else:
-                eject_dir = rng.standard_normal(3)
-                eject_dir /= np.linalg.norm(eject_dir)
 
-            ejection = (
-                eject_dir * proximity * 0.7
-                + vel_dir * proximity * 0.3
-            ) * displacement_scale * radius
+def _simulate_shatter_physics(
+    fragments_a: list[tuple[np.ndarray, np.ndarray, np.ndarray]],
+    fragments_b: list[tuple[np.ndarray, np.ndarray, np.ndarray]],
+    vel_a: np.ndarray,
+    vel_b: np.ndarray,
+    sim_steps: int = 60,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Run rigid body physics on shatter fragments from two colliding bodies.
 
-            displaced_verts = frag_verts + ejection
+    Takes fragment lists from both bodies, launches them at each other with
+    their pre-collision velocities, and returns displaced/rotated meshes.
 
-        # Rotate chunk outward — tipping away from impact
-        # Axis: perpendicular to the line from impact to fragment
-        tip_dir = frag_center - impact_point
-        tip_norm = np.linalg.norm(tip_dir)
-        if tip_norm > 0:
-            tip_dir = tip_dir / tip_norm
-            # Find a rotation axis perpendicular to the tip direction
-            if abs(tip_dir[0]) < 0.9:
-                rot_axis = np.cross(tip_dir, [1, 0, 0])
-            else:
-                rot_axis = np.cross(tip_dir, [0, 1, 0])
-            rot_axis = rot_axis / np.linalg.norm(rot_axis)
+    Args:
+        fragments_a/b: List of (verts, faces, centroid) per fragment
+        vel_a/b: Velocity vectors for each body at collision time
+        sim_steps: Number of physics steps to simulate
 
-            # Angle proportional to proximity (more rotation near impact)
-            dist_to_impact = np.linalg.norm(frag_center - impact_point)
-            prox = max(0.0, 1.0 - dist_to_impact / (radius * 2))
-            angle = prox * 0.3  # Up to ~17 degrees
+    Returns:
+        List of (displaced_verts, faces) for all fragments (a first, then b)
+    """
+    import mujoco
 
-            # Rodrigues rotation around fragment center
-            cos_a, sin_a = np.cos(angle), np.sin(angle)
-            centered = displaced_verts - frag_center
-            rotated = (
-                centered * cos_a
-                + np.cross(rot_axis, centered) * sin_a
-                + rot_axis * np.dot(centered, rot_axis)[:, np.newaxis] * (1 - cos_a)
-            )
-            displaced_verts = rotated + frag_center
+    all_fragments = fragments_a + fragments_b
 
-        all_verts.append(displaced_verts)
-        all_faces.append(frag_faces + offset)
-        offset += len(displaced_verts)
+    if not all_fragments:
+        return []
 
-    if not all_verts:
-        return np.array([]), np.array([])
+    spec = mujoco.MjSpec()
+    spec.modelname = "shatter"
+    spec.option.gravity = [0, 0, 0]  # No gravity in space
+    # Increase solver iterations for better collision response
+    spec.option.iterations = 20
 
-    return np.vstack(all_verts), np.vstack(all_faces)
+    # Create a mesh + body for each fragment
+    body_names = []
+    for i, (verts, faces, centroid) in enumerate(all_fragments):
+        name = f"frag_{i}"
+        body_names.append(name)
+
+        # MuJoCo mesh: vertices centered on centroid (body position = centroid)
+        centered_verts = verts - centroid
+        mesh = spec.add_mesh()
+        mesh.name = name
+        mesh.uservert = centered_verts.flatten().astype(np.float32)
+        mesh.userface = faces.flatten().astype(np.int32)
+
+        body = spec.worldbody.add_body()
+        body.name = name
+        body.pos = centroid.tolist()
+        body.add_freejoint()
+        geom = body.add_geom()
+        geom.type = mujoco.mjtGeom.mjGEOM_MESH
+        geom.meshname = name
+        geom.mass = 1.0
+
+    model = spec.compile()
+    data = mujoco.MjData(model)
+
+    # Set initial velocities: body_a fragments get vel_a, body_b get vel_b
+    n_a = len(fragments_a)
+    for i in range(len(all_fragments)):
+        vel = vel_a if i < n_a else vel_b
+        # Free joint qvel layout: [vx, vy, vz, wx, wy, wz] per body
+        qvel_offset = i * 6
+        data.qvel[qvel_offset:qvel_offset + 3] = vel
+
+    # Step physics
+    for _ in range(sim_steps):
+        mujoco.mj_step(model, data)
+
+    # Read back transforms and apply to original vertices
+    results = []
+    for i, (verts, faces, centroid) in enumerate(all_fragments):
+        # Free joint qpos layout: [x, y, z, qw, qx, qy, qz] per body
+        qpos_offset = i * 7
+        new_pos = data.qpos[qpos_offset:qpos_offset + 3].copy()
+        quat = data.qpos[qpos_offset + 3:qpos_offset + 7].copy()
+
+        # Convert quaternion to rotation matrix
+        rot = np.zeros(9)
+        mujoco.mju_quat2Mat(rot, quat)
+        rot = rot.reshape(3, 3)
+
+        # Apply rotation and translation: new_v = R @ (v - centroid) + new_pos
+        centered = verts - centroid
+        rotated = centered @ rot.T
+        displaced = rotated + new_pos
+
+        results.append((displaced, faces))
+
+    return results
 
 
 def _compute_max_safe_scale(ic: InitialConditions, n_steps: int) -> float:
@@ -771,29 +774,52 @@ def generate_trajectory_mesh(
                     mesh_names.append(f"start_{i + 1}_{color_name}")
 
         if sphere_settings.show_end and len(traj_normalized) > 0:
-            if i in (col_a, col_b):
-                # Shattered sphere for colliding bodies
-                other = col_b if i == col_a else col_a
-                impact_point = (traj_normalized[-1] + normalized_trajectories[other][-1]) / 2
-                # Velocity from trajectory end direction
-                if len(traj_normalized) >= 2:
-                    vel = traj_normalized[-1] - traj_normalized[-2]
-                else:
-                    vel = np.array([1.0, 0.0, 0.0])
-                shatter_verts, shatter_faces = _generate_shatter_mesh(
-                    traj_normalized[-1], sphere_radii[i], impact_point, vel,
-                )
-                if len(shatter_verts) > 0:
-                    all_vertices.append(shatter_verts)
-                    all_faces.append(shatter_faces)
-                    mesh_names.append(f"end_{i + 1}_{color_name}")
-            else:
+            if i not in (col_a, col_b):
                 sphere_verts, sphere_faces = _generate_sphere_mesh(
                     traj_normalized[-1], sphere_radii[i], sphere_settings.segments,
                 )
                 all_vertices.append(sphere_verts)
                 all_faces.append(sphere_faces)
                 mesh_names.append(f"end_{i + 1}_{color_name}")
+
+    # Shattered collision spheres: generate fragments for both bodies, simulate together
+    if col_a >= 0 and col_b >= 0 and sphere_settings.show_end:
+        traj_a = normalized_trajectories[col_a]
+        traj_b = normalized_trajectories[col_b]
+        impact_point = (traj_a[-1] + traj_b[-1]) / 2
+        impact_dir_a = impact_point - traj_a[-1]
+        impact_dir_b = impact_point - traj_b[-1]
+        norm_a = np.linalg.norm(impact_dir_a)
+        norm_b = np.linalg.norm(impact_dir_b)
+        impact_dir_norm_a = impact_dir_a / norm_a if norm_a > 0 else np.array([1.0, 0.0, 0.0])
+        impact_dir_norm_b = impact_dir_b / norm_b if norm_b > 0 else np.array([-1.0, 0.0, 0.0])
+
+        fragments_a = _generate_shatter_fragments(traj_a[-1], sphere_radii[col_a], impact_dir_norm_a)
+        fragments_b = _generate_shatter_fragments(traj_b[-1], sphere_radii[col_b], impact_dir_norm_b)
+
+        vel_a = (traj_a[-1] - traj_a[-2]) if len(traj_a) >= 2 else np.array([1.0, 0.0, 0.0])
+        vel_b = (traj_b[-1] - traj_b[-2]) if len(traj_b) >= 2 else np.array([-1.0, 0.0, 0.0])
+
+        # Scale velocities to get good visual spread (model units per timestep)
+        speed = max(np.linalg.norm(vel_a), np.linalg.norm(vel_b), 1e-6)
+        vel_scale = max(sphere_radii[col_a], sphere_radii[col_b]) * 3.0 / speed
+        vel_a = vel_a * vel_scale
+        vel_b = vel_b * vel_scale
+
+        print(f"[shatter] Simulating collision physics ({len(fragments_a)} + {len(fragments_b)} fragments)...")
+        sim_results = _simulate_shatter_physics(fragments_a, fragments_b, vel_a, vel_b)
+
+        n_a = len(fragments_a)
+        color_a = colors[col_a % len(colors)]
+        color_b = colors[col_b % len(colors)]
+        for j, (frag_verts, frag_faces) in enumerate(sim_results):
+            if len(frag_verts) > 0:
+                all_vertices.append(frag_verts)
+                all_faces.append(frag_faces)
+                if j < n_a:
+                    mesh_names.append(f"end_{col_a + 1}_{color_a}")
+                else:
+                    mesh_names.append(f"end_{col_b + 1}_{color_b}")
 
     return all_vertices, all_faces, mesh_names
 

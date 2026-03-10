@@ -3,12 +3,13 @@ name = "fleeting-grace"
 version = "0.1.0"
 description = "Generates nice looking 3 Body Problem simulations and turns them into 3D models for 3D printing"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 dependencies = [
     "numpy",
     "matplotlib",
     "cma>=4.0.0",
     "scipy>=1.16.3",
+    "mujoco>=3.5.0",
 ]
 
 [dependency-groups]
@@ -27,7 +28,7 @@ packages = ["fleeting_grace"]
 [tool.ruff]
 line-length = 150
 indent-width = 4
-target-version = "py314"
+target-version = "py313"
 
 [tool.ruff.format]
 quote-style = "double"
