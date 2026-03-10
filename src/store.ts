@@ -3,11 +3,17 @@ import type { SimulationResult, SimulationSettings } from "./simulation/types";
 import { DEFAULT_SIMULATION_SETTINGS } from "./simulation/types";
 import type { ExportSettings } from "./mesh/types";
 import { DEFAULT_EXPORT_SETTINGS } from "./mesh/types";
+import type { WorkerResponse } from "./simulation/simulation.worker";
 
 interface AppState {
   // Page 1: Simulation config
   simulationSettings: SimulationSettings;
   setSimulationSettings: (settings: Partial<SimulationSettings>) => void;
+
+  // Simulation run state
+  isRunning: boolean;
+  progress: { done: number; total: number } | null;
+  runSimulations: () => Promise<void>;
 
   // Simulation results
   simulations: SimulationResult[];
@@ -43,6 +49,38 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({
       simulationSettings: { ...s.simulationSettings, ...partial },
     })),
+
+  // Simulation run state
+  isRunning: false,
+  progress: null,
+  runSimulations: () => {
+    return new Promise<void>((resolve) => {
+      const settings = get().simulationSettings;
+      set({ isRunning: true, progress: { done: 0, total: settings.numSimulations } });
+
+      const worker = new Worker(
+        new URL("./simulation/simulation.worker.ts", import.meta.url),
+        { type: "module" },
+      );
+
+      worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
+        const msg = e.data;
+        if (msg.type === "progress") {
+          set({ progress: { done: msg.done, total: msg.total } });
+        } else if (msg.type === "result") {
+          set({
+            simulations: msg.simulations,
+            isRunning: false,
+            progress: null,
+          });
+          worker.terminate();
+          resolve();
+        }
+      };
+
+      worker.postMessage({ type: "run", settings });
+    });
+  },
 
   // Results
   simulations: [],
