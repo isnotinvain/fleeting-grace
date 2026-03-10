@@ -51,20 +51,31 @@ export function generateAllMeshes(
 
     // Scale trajectory points
     const scaledTraj = traj.map((p) => scalePoint(p, worldScale));
-
-    // Trajectory tube
-    const tube = generateTube(scaledTraj, tubeRadius, tubeRadius, settings.tubeSegments);
-    meshes.push({ name: `path_${bodyNum}`, material, mesh: tube });
-
-    // Start position marker
     const startPos = scaledTraj[0];
 
+    // Truncate the beginning of the trajectory at the marker sphere edge
+    const trimmedTraj = settings.start.style !== "none"
+      ? truncateAtSphere(scaledTraj, startPos, markerRadius)
+      : scaledTraj;
+
+    // Direction from start toward the first point of the truncated path
+    const pathDir = trimmedTraj.length >= 2
+      ? sub(trimmedTraj[1], startPos)
+      : sub(scaledTraj[Math.min(1, scaledTraj.length - 1)], startPos);
+
+    // Trajectory tube
+    if (trimmedTraj.length >= 2) {
+      const tube = generateTube(trimmedTraj, tubeRadius, tubeRadius, settings.tubeSegments);
+      meshes.push({ name: `path_${bodyNum}`, material, mesh: tube });
+    }
+
+    // Start position marker
     if (settings.start.style !== "none") {
       const startMesh = generateStartMarker(
         startPos,
         markerRadius,
         settings,
-        ic.velocities[bodyIdx],
+        pathDir,
         worldScale,
       );
       if (startMesh.vertices.length > 0) {
@@ -122,8 +133,8 @@ function generateStartMarker(
   position: Vec3,
   radius: number,
   settings: ExportSettings,
-  velocity: Vec3,
-  scaleFactor: number,
+  direction: Vec3,
+  _worldScale: number,
 ): Mesh {
   switch (settings.start.style) {
     case "solid_sphere":
@@ -138,22 +149,20 @@ function generateStartMarker(
         ringThickness,
         Math.min(settings.tubeSegments, 8),
         settings.start.segments,
-        velocity,
+        direction,
         stretch,
       );
     }
 
     case "ring": {
-      // Single ring oriented along velocity direction
       const ringThickness = radius * 0.1;
-      // Generate as a single-ring armillary (just use the first ring)
       return generateArmillary(
         position,
         radius,
         ringThickness,
         Math.min(settings.tubeSegments, 8),
         settings.start.segments,
-        velocity,
+        direction,
       );
     }
 
@@ -181,6 +190,52 @@ function computeScaleFactor(trajectories: Vec3[][], outputSizeInches: number): n
 
 function scalePoint(p: Vec3, factor: number): Vec3 {
   return [p[0] * factor, p[1] * factor, p[2] * factor];
+}
+
+/**
+ * Truncate the beginning of a trajectory so it starts at the edge of
+ * a sphere centered at the first point. Returns a new path whose first
+ * point lies on the sphere surface (interpolated).
+ */
+function truncateAtSphere(path: Vec3[], center: Vec3, radius: number): Vec3[] {
+  // Find the first point outside the sphere
+  let firstOutside = -1;
+  for (let i = 1; i < path.length; i++) {
+    if (length(sub(path[i], center)) > radius) {
+      firstOutside = i;
+      break;
+    }
+  }
+  if (firstOutside < 0) return path; // all inside or trivial
+
+  // Interpolate between the last inside point and the first outside point
+  const inside = path[firstOutside - 1];
+  const outside = path[firstOutside];
+  const dir = sub(outside, inside);
+  const segLen = length(dir);
+  if (segLen < 1e-10) return path.slice(firstOutside);
+
+  // Solve for t where |center + t*(outside - inside) - center| = radius
+  // Using the parametric ray from `inside` to `outside`
+  const oc = sub(inside, center);
+  const a = dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2];
+  const b = 2 * (oc[0] * dir[0] + oc[1] * dir[1] + oc[2] * dir[2]);
+  const c = oc[0] * oc[0] + oc[1] * oc[1] + oc[2] * oc[2] - radius * radius;
+  const disc = b * b - 4 * a * c;
+
+  let edgePoint: Vec3;
+  if (disc < 0) {
+    edgePoint = outside; // fallback
+  } else {
+    const t = (-b + Math.sqrt(disc)) / (2 * a);
+    edgePoint = [
+      inside[0] + t * dir[0],
+      inside[1] + t * dir[1],
+      inside[2] + t * dir[2],
+    ];
+  }
+
+  return [edgePoint, ...path.slice(firstOutside)];
 }
 
 /**
