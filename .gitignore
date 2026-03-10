@@ -215,3 +215,4 @@ trajectory_viewer.html
 # Generated meshes
 *.obj
 *.mtl
+.DS_Store
