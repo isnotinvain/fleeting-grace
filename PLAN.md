@@ -384,6 +384,8 @@ postMessage({                  →     Receives settings + ICs
 
 **Browser verification is part of the iteration loop.** In addition to running unit tests, use Chrome browser automation (via Claude in Chrome) to visually check work in the running dev server as you go. This means: run `npm run dev`, open the app in Chrome, and verify that UI changes look correct, interactions work, and there are no console errors. Don't rely solely on unit tests — visual confirmation catches layout issues, rendering bugs, and integration problems that tests miss.
 
+**Test interactions, not just rendering.** After verifying something renders correctly, also test that interactive elements work: drag sliders, click buttons, change inputs, navigate between pages, and confirm nothing breaks. Particularly important for state-driven UI like sort order changes, pagination, and settings that affect 3D scenes. Don't commit UI work without exercising the interactions in the browser first.
+
 **Use non-blocking commands so the user can step away.** Always use `run_in_background: true` for long-running commands like `npm run dev`, `npx vite`, test runs, etc. This avoids requiring the user to manually approve each command. Keep the workflow autonomous — the user should be able to walk away while you iterate.
 
 What gets tested:
