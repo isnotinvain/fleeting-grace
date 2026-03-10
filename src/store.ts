@@ -4,6 +4,7 @@ import { DEFAULT_SIMULATION_SETTINGS } from "./simulation/types";
 import type { ExportSettings } from "./mesh/types";
 import { DEFAULT_EXPORT_SETTINGS } from "./mesh/types";
 import type { WorkerResponse } from "./simulation/simulation.worker";
+import { scoreFunctions } from "./scoring/registry";
 
 interface AppState {
   // Page 1: Simulation config
@@ -68,8 +69,13 @@ export const useStore = create<AppState>((set, get) => ({
         if (msg.type === "progress") {
           set({ progress: { done: msg.done, total: msg.total } });
         } else if (msg.type === "result") {
+          // Compute per-metric scores for all simulations
+          const perMetricScores = msg.simulations.map((sim) =>
+            scoreFunctions.map((fn) => fn.score(sim)),
+          );
           set({
             simulations: msg.simulations,
+            perMetricScores,
             isRunning: false,
             progress: null,
           });
