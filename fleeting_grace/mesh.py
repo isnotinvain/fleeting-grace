@@ -370,27 +370,46 @@ def _generate_shatter_mesh(
     radius: float,
     impact_point: np.ndarray,
     velocity: np.ndarray,
-    num_fragments: int = 3,
-    displacement_scale: float = 0.3,
-    gap_scale: float = 0.08,
+    num_fragments: int = 10,
+    displacement_scale: float = 0.6,
+    gap_scale: float = 0.05,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Generate a shattered sphere — split into chunks pulled apart.
+    """Generate a shattered sphere — Voronoi chunks displaced from impact.
 
-    Uses 3 random cutting planes through the center to slice the sphere
-    into convex pieces, then displaces them.
+    More seeds near impact = smaller fragments there, fewer on far side =
+    bigger chunks. Each chunk is a solid convex piece of the sphere.
     """
-    from scipy.spatial import ConvexHull
+    from scipy.spatial import ConvexHull, cKDTree
 
     rng = np.random.default_rng(hash(tuple(center)) & 0xFFFFFFFF)
 
-    # Generate random cutting planes through the center
-    planes = []
-    for _ in range(num_fragments):
-        normal = rng.standard_normal(3)
-        normal = normal / np.linalg.norm(normal)
-        planes.append(normal)
+    # Impact direction
+    impact_dir = impact_point - center
+    impact_dist = np.linalg.norm(impact_dir)
+    impact_dir_norm = impact_dir / impact_dist if impact_dist > 0 else np.array([1.0, 0.0, 0.0])
 
-    # Generate a dense point cloud filling the sphere
+    # Voronoi seeds: many near impact (small chunks), few on far side (big chunks)
+    seeds = []
+    # 80% of seeds near impact — tightly clustered for small fragments
+    n_near = int(num_fragments * 0.8)
+    for _ in range(n_near):
+        pt = rng.standard_normal(3)
+        pt = pt / np.linalg.norm(pt)
+        pt = pt + impact_dir_norm * 2.5
+        pt = pt / np.linalg.norm(pt)
+        r = radius * rng.uniform(0.2, 0.8) ** (1 / 3)
+        seeds.append(center + pt * r)
+    # 20% on far side — spread out for big chunks
+    for _ in range(num_fragments - n_near):
+        pt = rng.standard_normal(3)
+        pt = pt / np.linalg.norm(pt)
+        pt = pt - impact_dir_norm * 1.0
+        pt = pt / np.linalg.norm(pt)
+        r = radius * rng.uniform(0.2, 0.8) ** (1 / 3)
+        seeds.append(center + pt * r)
+    seeds = np.array(seeds)
+
+    # Dense point cloud filling the sphere
     n_pts = 5000
     pts = []
     for _ in range(n_pts):
@@ -400,17 +419,9 @@ def _generate_shatter_mesh(
         pts.append(center + p * r)
     pts = np.array(pts)
 
-    # Assign each point to a cell based on which side of each plane it's on
-    # With N planes we get up to 2^N cells
-    signs = np.zeros((n_pts, len(planes)), dtype=int)
-    for j, normal in enumerate(planes):
-        dots = np.dot(pts - center, normal)
-        signs[:, j] = (dots > 0).astype(int)
-
-    # Convert sign pattern to cell ID
-    cell_ids = np.zeros(n_pts, dtype=int)
-    for j in range(len(planes)):
-        cell_ids += signs[:, j] * (2 ** j)
+    # Assign each point to nearest seed
+    tree = cKDTree(seeds)
+    _, cell_ids = tree.query(pts)
 
     # Velocity direction
     vel_mag = np.linalg.norm(velocity)
@@ -420,8 +431,7 @@ def _generate_shatter_mesh(
     all_faces = []
     offset = 0
 
-    unique_cells = np.unique(cell_ids)
-    for cell_id in unique_cells:
+    for cell_id in range(len(seeds)):
         cell_pts = pts[cell_ids == cell_id]
         if len(cell_pts) < 4:
             continue
@@ -554,12 +564,14 @@ def _truncate_at_collision(
         frac = idx - i
         return traj[i] * (1 - frac) + traj[i + 1] * frac
 
-    # Binary search for the t where distance = sum_radii
+    # Binary search for the t where distance = overlap_dist
+    # Use 70% of sum_radii so the spheres overlap (look like they're colliding)
+    overlap_dist = sum_radii * 0.7
     t_lo, t_hi = 0.0, 1.0
     for _ in range(50):
         t_mid = (t_lo + t_hi) / 2
         dist = np.linalg.norm(interp(traj_a, t_mid) - interp(traj_b, t_mid))
-        if dist < sum_radii:
+        if dist < overlap_dist:
             t_hi = t_mid
         else:
             t_lo = t_mid
