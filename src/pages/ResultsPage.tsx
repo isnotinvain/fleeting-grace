@@ -10,11 +10,16 @@ export function ResultsPage() {
   const perMetricScores = useStore((s) => s.perMetricScores);
   const scoringWeights = useStore((s) => s.scoringWeights);
   const setScoringWeight = useStore((s) => s.setScoringWeight);
+  const addSimulationFromBase64 = useStore((s) => s.addSimulationFromBase64);
+  const isRunning = useStore((s) => s.isRunning);
   const resetScoringWeights = useStore((s) => s.resetScoringWeights);
   const gridColumns = useStore((s) => s.gridColumns);
   const gridRows = useStore((s) => s.gridRows);
 
   const [page, setPage] = useState(0);
+  const [showIcInput, setShowIcInput] = useState(false);
+  const [icInput, setIcInput] = useState("");
+  const [icError, setIcError] = useState("");
   const perPage = gridColumns * gridRows;
 
   // Compute weighted scores and sort indices
@@ -57,13 +62,52 @@ export function ResultsPage() {
             {simulations.length} simulations — sorted by weighted score
           </p>
         </div>
-        <button
-          onClick={() => navigate("/")}
-          className="text-gray-400 hover:text-white transition-colors"
-        >
-          Back to Setup
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setShowIcInput((v) => !v)}
+            className="text-gray-400 hover:text-white transition-colors text-sm"
+          >
+            Load IC
+          </button>
+          <button
+            onClick={() => navigate("/")}
+            className="text-gray-400 hover:text-white transition-colors"
+          >
+            Back to Setup
+          </button>
+        </div>
       </div>
+
+      {showIcInput && (
+        <div className="mb-6 flex items-center gap-3">
+          <input
+            type="text"
+            value={icInput}
+            onChange={(e) => { setIcInput(e.target.value); setIcError(""); }}
+            placeholder="Paste base64-encoded initial conditions..."
+            className="flex-1 bg-gray-900 text-white text-sm font-mono px-3 py-2 rounded-lg border border-gray-700 focus:border-cyan-500 focus:outline-none"
+          />
+          <button
+            onClick={async () => {
+              const trimmed = icInput.trim();
+              if (!trimmed) return;
+              try {
+                await addSimulationFromBase64(trimmed);
+                setIcInput("");
+                setIcError("");
+                setShowIcInput(false);
+              } catch (e) {
+                setIcError(e instanceof Error ? e.message : "Invalid base64 data");
+              }
+            }}
+            disabled={isRunning || !icInput.trim()}
+            className="bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+          >
+            Add
+          </button>
+          {icError && <span className="text-red-400 text-sm">{icError}</span>}
+        </div>
+      )}
 
       <div className="flex gap-8">
         {/* Scoring panel */}

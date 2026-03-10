@@ -9,6 +9,7 @@ import type { ExportSettings } from "./mesh/types";
 import { DEFAULT_EXPORT_SETTINGS } from "./mesh/types";
 import type { WorkerResponse } from "./simulation/simulation.worker";
 import { scoreFunctions } from "./scoring/registry";
+import { decodeInitialConditions } from "./utils/base64ic";
 
 interface AppState {
   // Page 1: Simulation config
@@ -22,6 +23,8 @@ interface AppState {
   runSimulations: () => Promise<void>;
   /** Replay simulations from saved initial conditions. */
   replaySimulations: (ics: InitialConditions[]) => Promise<void>;
+  /** Decode a base64 IC string, run the sim, and append to current results. */
+  addSimulationFromBase64: (base64Str: string) => Promise<void>;
 
   // Simulation results
   simulations: SimulationResult[];
@@ -121,6 +124,28 @@ export const useStore = create<AppState>((set, get) => ({
       scoreFunctions.map((fn) => fn.score(sim)),
     );
     set({ simulations, perMetricScores, isRunning: false, progress: null });
+  },
+
+  addSimulationFromBase64: async (base64Str: string) => {
+    const ic = decodeInitialConditions(base64Str);
+    const settings = get().simulationSettings;
+    set({ isRunning: true, progress: { done: 0, total: 1 } });
+
+    const newSims = await runWorker(settings, [ic], (done, total) => {
+      set({ progress: { done, total } });
+    });
+
+    const existing = get().simulations;
+    const existingScores = get().perMetricScores;
+    const newScores = newSims.map((sim) =>
+      scoreFunctions.map((fn) => fn.score(sim)),
+    );
+    set({
+      simulations: [...existing, ...newSims],
+      perMetricScores: [...existingScores, ...newScores],
+      isRunning: false,
+      progress: null,
+    });
   },
 
   // Results
