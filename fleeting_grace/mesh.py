@@ -242,36 +242,61 @@ def _generate_sphere_mesh(
     return vertices, np.array(faces)
 
 
+def _generate_arrow_mesh(
+    origin: np.ndarray,
+    direction: np.ndarray,
+    length: float,
+    base_radius: float,
+    segments: int = 16,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Generate a cone arrow from origin in the given direction."""
+    direction = direction / np.linalg.norm(direction)
+    tip = origin + direction * length
+    points = np.array([origin, tip])
+    return _generate_tube_mesh(points, base_radius, 1e-6, segments)
+
+
 def _generate_armillary_mesh(
     center: np.ndarray,
     radius: float,
+    direction: np.ndarray | None = None,
     ring_thickness: float | None = None,
     ring_points: int = 64,
     tube_segments: int = 8,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Generate an armillary sphere (3 orthogonal ring tubes)."""
+    """Generate an armillary sphere (3 orthogonal ring tubes).
+
+    If direction is given, orients the armillary so one ring's axis
+    aligns with that direction (the sphere "points" that way).
+    """
     if ring_thickness is None:
         ring_thickness = radius * 0.1
+
+    # Build a local orthonormal frame
+    if direction is not None and np.linalg.norm(direction) > 0:
+        fwd = direction / np.linalg.norm(direction)
+    else:
+        fwd = np.array([0.0, 0.0, 1.0])
+    # Find a perpendicular vector
+    if abs(fwd[0]) < 0.9:
+        right = np.cross(fwd, [1, 0, 0])
+    else:
+        right = np.cross(fwd, [0, 1, 0])
+    right /= np.linalg.norm(right)
+    up = np.cross(fwd, right)
 
     all_verts = []
     all_faces = []
     offset = 0
 
-    # 3 great circles in XY, XZ, YZ planes
-    for axis in range(3):
-        # Generate circular path
+    # 3 great circles in the planes formed by pairs of local axes
+    axes_pairs = [(right, up), (right, fwd), (up, fwd)]
+    for ax1, ax2 in axes_pairs:
         angles = np.linspace(0, 2 * np.pi, ring_points, endpoint=False)
-        path = np.zeros((ring_points, 3))
-        if axis == 0:  # XY plane
-            path[:, 0] = np.cos(angles) * radius
-            path[:, 1] = np.sin(angles) * radius
-        elif axis == 1:  # XZ plane
-            path[:, 0] = np.cos(angles) * radius
-            path[:, 2] = np.sin(angles) * radius
-        else:  # YZ plane
-            path[:, 1] = np.cos(angles) * radius
-            path[:, 2] = np.sin(angles) * radius
-        path += center
+        path = np.array([
+            center + radius * (np.cos(a) * ax1 + np.sin(a) * ax2)
+            for a in angles
+        ])
 
         # Close the loop by appending the first few points
         path = np.vstack([path, path[:2]])
@@ -286,6 +311,25 @@ def _generate_armillary_mesh(
         return np.array([]), np.array([])
 
     return np.vstack(all_verts), np.vstack(all_faces)
+
+
+def _truncate_start_at_sphere(
+    traj: np.ndarray,
+    sphere_radius: float,
+) -> np.ndarray:
+    """Truncate the beginning of a trajectory to start where it exits the start sphere."""
+    center = traj[0]
+    # Find first point outside the sphere
+    for i in range(1, len(traj)):
+        dist = np.linalg.norm(traj[i] - center)
+        if dist >= sphere_radius:
+            # Interpolate between i-1 and i for the exact exit point
+            prev_dist = np.linalg.norm(traj[i - 1] - center)
+            t = (sphere_radius - prev_dist) / (dist - prev_dist) if dist != prev_dist else 0.0
+            exit_point = traj[i - 1] * (1 - t) + traj[i] * t
+            return np.vstack([exit_point[np.newaxis, :], traj[i:]])
+    # Entire trajectory is inside the sphere
+    return traj
 
 
 def _compute_max_safe_scale(ic: InitialConditions, n_steps: int) -> float:
@@ -468,6 +512,11 @@ def generate_trajectory_mesh(
 
     for i, traj_normalized in enumerate(normalized_trajectories):
         color_name = colors[i % len(colors)]
+        start_center = traj_normalized[0].copy()
+
+        # Truncate start to exit the armillary sphere
+        if sphere_settings.show_start and len(traj_normalized) > 2:
+            traj_normalized = _truncate_start_at_sphere(traj_normalized, sphere_radii[i])
 
         tube_verts, tube_faces = _generate_tube_mesh(
             traj_normalized,
@@ -481,13 +530,35 @@ def generate_trajectory_mesh(
             mesh_names.append(f"trajectory_{i + 1}_{color_name}")
 
         if sphere_settings.show_start and len(traj_normalized) > 0:
+            # Orient armillary toward where the tube exits
+            exit_dir = traj_normalized[0] - start_center
+            if np.linalg.norm(exit_dir) < 1e-10:
+                exit_dir = None
             arm_verts, arm_faces = _generate_armillary_mesh(
-                traj_normalized[0], sphere_radii[i],
+                start_center, sphere_radii[i], direction=exit_dir,
             )
             if len(arm_verts) > 0:
                 all_vertices.append(arm_verts)
                 all_faces.append(arm_faces)
                 mesh_names.append(f"start_{i + 1}_{color_name}")
+
+            # Velocity arrow pointing in initial velocity direction
+            if sim_result.initial_conditions is not None:
+                vel = sim_result.initial_conditions.velocities[i]
+                arrow_dir = vel / np.linalg.norm(vel) if np.linalg.norm(vel) > 0 else None
+            else:
+                arrow_dir = None
+            if arrow_dir is not None:
+                arrow_origin = start_center + arrow_dir * sphere_radii[i]
+                arrow_length = sphere_radii[i] * 1.5
+                arrow_base = sphere_radii[i] * 0.3
+                arrow_verts, arrow_faces = _generate_arrow_mesh(
+                    arrow_origin, arrow_dir, arrow_length, arrow_base,
+                )
+                if len(arrow_verts) > 0:
+                    all_vertices.append(arrow_verts)
+                    all_faces.append(arrow_faces)
+                    mesh_names.append(f"start_{i + 1}_{color_name}")
 
         if sphere_settings.show_end and len(traj_normalized) > 0:
             sphere_verts, sphere_faces = _generate_sphere_mesh(
