@@ -382,6 +382,8 @@ postMessage({                  →     Receives settings + ICs
 
 **Tests are written alongside each implementation, not after.** Every phase that adds math, simulation, scoring, or geometry code includes unit tests for that code in the same phase. No function ships without its tests.
 
+**Browser verification is part of the iteration loop.** In addition to running unit tests, use Chrome browser automation (via Claude in Chrome) to visually check work in the running dev server as you go. This means: run `npm run dev`, open the app in Chrome, and verify that UI changes look correct, interactions work, and there are no console errors. Don't rely solely on unit tests — visual confirmation catches layout issues, rendering bugs, and integration problems that tests miss.
+
 What gets tested:
 - All simulation functions (integration, collision detection, body radius, IC generation)
 - Trajectory simplification (Douglas-Peucker)
