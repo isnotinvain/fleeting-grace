@@ -197,3 +197,8 @@ export const useStore = create<AppState>((set, get) => ({
     set({ hasSavedWorkspace: false });
   },
 }));
+
+// Expose store for E2E tests (Playwright can't reliably set React-controlled inputs)
+if (typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__store = useStore;
+}

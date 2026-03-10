@@ -24,11 +24,39 @@ async function setNumberInput(page: Page, label: string, value: number) {
   await input.fill(String(value));
 }
 
-// Helper: get all number inputs in a container
-async function getNumberInputValue(page: Page, label: string): Promise<string> {
-  const row = page.locator("div").filter({ hasText: new RegExp(`^${label}`) });
-  return row.locator('input[type="number"]').first().inputValue();
+// Helper: set export settings via the Zustand store directly.
+// Playwright's fill()/selectOption() don't reliably trigger React 19's onChange
+// in headless Chromium, so we bypass the DOM and go straight to the store.
+async function setExportSetting(page: Page, path: string, value: unknown) {
+  await page.evaluate(
+    ({ path: p, value: v }) => {
+      const store = (window as unknown as Record<string, unknown>).__store as {
+        getState: () => Record<string, unknown>;
+      };
+      const state = store.getState();
+      const simIndex = Number(location.hash.match(/\/export\/(\d+)/)?.[1] ?? 0);
+      const getSettings = state.getExportSettings as (i: number) => Record<string, unknown>;
+      const setSettings = state.setExportSettings as (i: number, s: Record<string, unknown>) => void;
+      const current = getSettings(simIndex);
+
+      // Support nested paths like "start.style" or "end.scaleFactor"
+      const parts = p.split(".");
+      if (parts.length === 1) {
+        setSettings(simIndex, { ...current, [parts[0]]: v });
+      } else {
+        const section = current[parts[0]] as Record<string, unknown>;
+        setSettings(simIndex, {
+          ...current,
+          [parts[0]]: { ...section, [parts[1]]: v },
+        });
+      }
+    },
+    { path, value },
+  );
+  // Wait for React re-render
+  await page.waitForTimeout(100);
 }
+
 
 test.describe("Full E2E Workflow", () => {
   test("Setup → Run → Results → Export → Workspace round-trip", async ({ page }) => {
@@ -377,6 +405,245 @@ test.describe("Full E2E Workflow", () => {
     await expect(page.getByText("Simulation not found")).toBeVisible();
     await page.getByText("Back to Results").click();
     await page.waitForURL("**/results");
+
+    const realErrors = errors.filter(
+      (e) =>
+        !e.includes("THREE.") &&
+        !e.includes("sourcemap") &&
+        !e.includes("DevTools") &&
+        !e.includes("404") &&
+        !e.includes("WebGL"),
+    );
+    expect(realErrors).toEqual([]);
+  });
+
+  test("Scoring weights: mess with every slider and verify re-sorting", async ({ page }) => {
+    const errors = trackConsoleErrors(page);
+    await resetState(page);
+
+    // Run 10 simulations so we have variety to sort
+    await setNumberInput(page, "Number of simulations", 10);
+    await page.getByRole("button", { name: "Run Simulations" }).click();
+    await page.waitForURL("**/results", { timeout: 30_000 });
+
+    const cards = page.locator(".grid > div");
+    const sliders = page.locator('input[type="range"]');
+    await expect(sliders).toHaveCount(9);
+
+    // Helper: get the sim indices from the grid by reading Export link hrefs
+    async function getGridOrder(): Promise<string[]> {
+      const exportLinks = cards.locator("text=Export");
+      const count = await exportLinks.count();
+      const order: string[] = [];
+      for (let i = 0; i < count; i++) {
+        // Each Export button navigates to /export/:simIndex, we can get the
+        // card's position + reason text as a fingerprint
+        const card = cards.nth(i);
+        const reason = await card.locator(".text-xs.text-gray-500").textContent();
+        // Also get the score bar widths as a fingerprint
+        const bars = card.locator(".bg-cyan-500");
+        const barCount = await bars.count();
+        const widths: string[] = [];
+        for (let j = 0; j < barCount; j++) {
+          const style = await bars.nth(j).getAttribute("style");
+          widths.push(style ?? "");
+        }
+        order.push(`${reason}|${widths.join(",")}`);
+      }
+      return order;
+    }
+
+    const baselineOrder = await getGridOrder();
+
+    // ── Crank SpaceFilling to max, everything else to 0 ──
+    for (let i = 0; i < 9; i++) {
+      await sliders.nth(i).fill(i === 0 ? "10" : "0");
+    }
+    const scoringRows = page.locator(".space-y-3 > div");
+    await expect(scoringRows.first().locator(".font-mono")).toHaveText("10");
+    await expect(scoringRows.nth(1).locator(".font-mono")).toHaveText("0");
+    // Cards should still all be present and rendering
+    await expect(cards).toHaveCount(10);
+    const spaceFillingOrder = await getGridOrder();
+
+    // ── Now flip: Duration to max, everything else to 0 ──
+    for (let i = 0; i < 9; i++) {
+      await sliders.nth(i).fill(i === 8 ? "10" : "0");
+    }
+    await expect(scoringRows.last().locator(".font-mono")).toHaveText("10");
+    await expect(cards).toHaveCount(10);
+    const durationOrder = await getGridOrder();
+
+    // ── Set every slider to a different value across the full range ──
+    const values = [-10, -7, -4, -1, 0, 2, 5, 8, 10];
+    for (let i = 0; i < 9; i++) {
+      await sliders.nth(i).fill(String(values[i]));
+    }
+    // Verify each slider's displayed weight
+    for (let i = 0; i < 9; i++) {
+      await expect(scoringRows.nth(i).locator(".font-mono")).toHaveText(String(values[i]));
+    }
+    await expect(cards).toHaveCount(10);
+
+    // ── Set all weights to negative: sorting should still work ──
+    for (let i = 0; i < 9; i++) {
+      await sliders.nth(i).fill("-5");
+    }
+    for (let i = 0; i < 9; i++) {
+      await expect(scoringRows.nth(i).locator(".font-mono")).toHaveText("-5");
+    }
+    await expect(cards).toHaveCount(10);
+
+    // ── Reset and confirm it restores defaults ──
+    await page.getByText("Reset all weights").click();
+    for (let i = 0; i < 9; i++) {
+      await expect(scoringRows.nth(i).locator(".font-mono")).toHaveText("1");
+    }
+    const resetOrder = await getGridOrder();
+    expect(resetOrder).toEqual(baselineOrder);
+
+    const realErrors = errors.filter(
+      (e) =>
+        !e.includes("THREE.") &&
+        !e.includes("sourcemap") &&
+        !e.includes("DevTools") &&
+        !e.includes("404") &&
+        !e.includes("WebGL"),
+    );
+    expect(realErrors).toEqual([]);
+  });
+
+  test("Export settings: mess with every control", async ({ page }) => {
+    const errors = trackConsoleErrors(page);
+    await resetState(page);
+
+    // Run 5 sims, go to export page for the first one
+    await setNumberInput(page, "Number of simulations", 5);
+    await page.getByRole("button", { name: "Run Simulations" }).click();
+    await page.waitForURL("**/results", { timeout: 30_000 });
+
+    // Click Export on the first card
+    const cards = page.locator(".grid > div");
+    await cards.first().getByText("Export").click();
+    await page.waitForURL(/\/export\/\d+/);
+    await expect(page.locator("h1")).toHaveText("Export");
+
+    const allInputs = page.locator("input[type='number']");
+    const allSelects = page.locator("select");
+
+    // ── General: Tube segments ──
+    // Default is 64; cycle through several values
+    for (const val of [16, 128, 32]) {
+      await setExportSetting(page, "tubeSegments", val);
+      await expect(allInputs.first()).toHaveValue(String(val));
+    }
+
+    // ── General: Output size ──
+    // Default is 9; cycle through several values
+    for (const val of [1, 12, 24, 6]) {
+      await setExportSetting(page, "outputSize", val);
+      await expect(allInputs.nth(1)).toHaveValue(String(val));
+    }
+
+    // ── Start style: cycle through all options ──
+    for (const style of ["none", "solid_sphere", "armillary", "ring"] as const) {
+      await setExportSetting(page, "start.style", style);
+      await expect(allSelects.first()).toHaveValue(style);
+
+      if (style === "none") {
+        // "none" hides scale factor and segments for start
+        // End is still solid_sphere, so only 1 "Scale factor" label
+        await expect(page.getByText("Scale factor")).toHaveCount(1);
+      } else {
+        // Non-none shows Scale factor for both start + end
+        await expect(page.getByText("Scale factor")).toHaveCount(2);
+      }
+    }
+
+    // Set to armillary for more settings to tweak
+    await setExportSetting(page, "start.style", "armillary");
+    await expect(allSelects.first()).toHaveValue("armillary");
+
+    // ── Start: Scale factor ──
+    for (const val of [0.5, 10, 20, 4]) {
+      await setExportSetting(page, "start.scaleFactor", val);
+      await expect(allInputs.nth(2)).toHaveValue(String(val));
+    }
+
+    // ── Start: Segments ──
+    for (const val of [4, 32, 128, 16]) {
+      await setExportSetting(page, "start.segments", val);
+      await expect(allInputs.nth(3)).toHaveValue(String(val));
+    }
+
+    // ── Velocity arrow toggle: click multiple times ──
+    const arrowToggle = page.getByText("Show velocity arrow").locator("..").locator("button");
+    const initialClass = await arrowToggle.getAttribute("class");
+    const wasOn = initialClass?.includes("bg-cyan-600");
+
+    await arrowToggle.click(); // toggle
+    const afterClick = await arrowToggle.getAttribute("class");
+    expect(afterClick?.includes("bg-cyan-600")).toBe(!wasOn);
+
+    await arrowToggle.click(); // toggle back
+    const afterSecond = await arrowToggle.getAttribute("class");
+    expect(afterSecond?.includes("bg-cyan-600")).toBe(wasOn);
+
+    // Also toggle via the store
+    await setExportSetting(page, "start.showVelocityArrow", false);
+    await expect(arrowToggle).toHaveClass(/bg-gray-700/);
+    await setExportSetting(page, "start.showVelocityArrow", true);
+    await expect(arrowToggle).toHaveClass(/bg-cyan-600/);
+
+    // ── End style: cycle through options ──
+    for (const style of ["none", "solid_sphere"] as const) {
+      await setExportSetting(page, "end.style", style);
+      await expect(allSelects.last()).toHaveValue(style);
+
+      if (style === "none") {
+        // Start still has scale factor (armillary), end doesn't → count = 1
+        await expect(page.getByText("Scale factor")).toHaveCount(1);
+      } else {
+        await expect(page.getByText("Scale factor")).toHaveCount(2);
+      }
+    }
+
+    // Set end to solid_sphere and mess with its settings
+    await setExportSetting(page, "end.style", "solid_sphere");
+
+    // ── End: Scale factor ──
+    for (const val of [1, 8, 15, 3]) {
+      await setExportSetting(page, "end.scaleFactor", val);
+      // With armillary start: inputs are [tube, output, startScale, startSeg, endScale, endSeg]
+      await expect(allInputs.nth(4)).toHaveValue(String(val));
+    }
+
+    // ── End: Segments ──
+    for (const val of [4, 64, 128, 32]) {
+      await setExportSetting(page, "end.segments", val);
+      await expect(allInputs.nth(5)).toHaveValue(String(val));
+    }
+
+    // ── Verify settings persist across navigation ──
+    await page.getByText("Back to Results").click();
+    await page.waitForURL("**/results");
+
+    // Re-enter the same export page
+    await cards.first().getByText("Export").click();
+    await page.waitForURL(/\/export\/\d+/);
+
+    // All the last values should still be there
+    await expect(allInputs.first()).toHaveValue("32");      // tubeSegments
+    await expect(allInputs.nth(1)).toHaveValue("6");        // outputSize
+    await expect(allSelects.first()).toHaveValue("armillary"); // start.style
+    await expect(allInputs.nth(2)).toHaveValue("4");        // start.scaleFactor
+    await expect(allInputs.nth(3)).toHaveValue("16");       // start.segments
+    await expect(allSelects.last()).toHaveValue("solid_sphere"); // end.style
+    await expect(allInputs.nth(4)).toHaveValue("3");        // end.scaleFactor
+    await expect(allInputs.nth(5)).toHaveValue("32");       // end.segments
+
+    // ── Download button is present ──
+    await expect(page.getByRole("button", { name: "Download OBJ" })).toBeVisible();
 
     const realErrors = errors.filter(
       (e) =>

@@ -12,11 +12,13 @@ export function ExportPage() {
   const simIndex = Number(simIndexStr);
 
   const simulations = useStore((s) => s.simulations);
+  const exportSettingsMap = useStore((s) => s.exportSettings);
   const getExportSettings = useStore((s) => s.getExportSettings);
   const setExportSettings = useStore((s) => s.setExportSettings);
 
   const sim = simulations[simIndex];
-  const settings = getExportSettings(simIndex);
+  // Subscribe to exportSettingsMap so we re-render when settings change
+  const settings = exportSettingsMap[simIndex] ?? getExportSettings(simIndex);
 
   const update = useCallback(
     (partial: Partial<ExportSettings>) => {
