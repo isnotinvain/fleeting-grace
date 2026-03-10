@@ -8,5 +8,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
+    server: {
+      deps: {
+        inline: ["quickhull3d", "get-plane-normal"],
+      },
+    },
   },
 });

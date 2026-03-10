@@ -145,6 +145,22 @@ export function ExportPage() {
                   onChange={(v) => update({ end: { ...settings.end, segments: v } })}
                   min={4} max={128} step={4}
                 />
+                {settings.end.style === "exploding" && (
+                  <>
+                    <NumberSetting
+                      label="Fragment count"
+                      value={settings.end.fragmentCount}
+                      onChange={(v) => update({ end: { ...settings.end, fragmentCount: v } })}
+                      min={4} max={30} step={1}
+                    />
+                    <NumberSetting
+                      label="Physics steps"
+                      value={settings.end.physicsSteps}
+                      onChange={(v) => update({ end: { ...settings.end, physicsSteps: v } })}
+                      min={10} max={200} step={10}
+                    />
+                  </>
+                )}
               </>
             )}
           </SettingsSection>

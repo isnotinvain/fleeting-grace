@@ -82,4 +82,50 @@ describe("generateAllMeshes", () => {
     const arrows = meshes.filter((m) => m.name.startsWith("arrow_"));
     expect(arrows.length).toBeGreaterThan(0);
   });
+
+  it("generates exploding fragments for collision results", () => {
+    const result = makeResult();
+    // Make bodies 1 and 2 end at the same spot (collision)
+    const collisionResult: SimulationResult = {
+      ...result,
+      reason: "collision",
+      trajectories: [
+        result.trajectories[0],
+        // Body 2 ends near body 1's endpoint
+        [...result.trajectories[1].slice(0, -1), result.trajectories[0][result.trajectories[0].length - 1]],
+        result.trajectories[2],
+      ],
+    };
+    const settings = {
+      ...DEFAULT_EXPORT_SETTINGS,
+      end: { ...DEFAULT_EXPORT_SETTINGS.end, style: "exploding" as const, fragmentCount: 6, physicsSteps: 20 },
+    };
+    const meshes = generateAllMeshes(collisionResult, settings);
+    const endMeshes = meshes.filter((m) => m.name.startsWith("end_"));
+    const strutMeshes = meshes.filter((m) => m.name.startsWith("strut_"));
+    // Should have fragment meshes for both colliding bodies
+    expect(endMeshes.length).toBeGreaterThan(0);
+    // Should have support struts
+    expect(strutMeshes.length).toBeGreaterThan(0);
+    // All face indices valid
+    for (const { mesh } of [...endMeshes, ...strutMeshes]) {
+      const maxIdx = mesh.vertices.length - 1;
+      for (const face of mesh.faces) {
+        for (const idx of face) {
+          expect(idx).toBeGreaterThanOrEqual(0);
+          expect(idx).toBeLessThanOrEqual(maxIdx);
+        }
+      }
+    }
+  });
+
+  it("exploding style is ignored for non-collision results", () => {
+    const settings = {
+      ...DEFAULT_EXPORT_SETTINGS,
+      end: { ...DEFAULT_EXPORT_SETTINGS.end, style: "exploding" as const },
+    };
+    const meshes = generateAllMeshes(makeResult(), settings); // reason = "max_steps"
+    const endMeshes = meshes.filter((m) => m.name.startsWith("end_"));
+    expect(endMeshes).toHaveLength(0);
+  });
 });
