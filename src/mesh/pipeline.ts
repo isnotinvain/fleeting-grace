@@ -27,13 +27,13 @@ export function generateAllMeshes(
   const meshes: NamedMesh[] = [];
   const trajectories = result.trajectories;
   const ic = result.initialConditions;
-  const safeFactor = Math.min(result.maxSafeScale, settings.start.scaleFactor);
 
-  // Compute scale: normalize everything to fit in outputSize inches
-  const scaleFactor = computeScaleFactor(trajectories, settings.outputSize);
+  // Normalize all positions to fit within outputSize inches
+  const worldScale = computeScaleFactor(trajectories, settings.outputSize);
 
-  // Tube radius: proportional to output size
-  const tubeRadius = settings.outputSize * 0.005; // 0.5% of output size
+  // maxSafeScale: largest uniform radius multiplier that avoids false visual
+  // collisions at any point in the simulation
+  const safeScale = result.maxSafeScale;
 
   for (let bodyIdx = 0; bodyIdx < trajectories.length; bodyIdx++) {
     const traj = trajectories[bodyIdx];
@@ -42,8 +42,15 @@ export function generateAllMeshes(
     const bodyNum = bodyIdx + 1;
     const material = `body_${bodyNum}`;
 
+    // Per-body radius: physical radius scaled to output space, then enlarged
+    // by safeScale (the max that avoids false visual collisions)
+    const massKg = ic.masses[bodyIdx];
+    const tubeRadius = bodyRadius(massKg) * worldScale * safeScale;
+    // Markers use a user-configurable multiplier on top of the tube radius
+    const markerRadius = tubeRadius * settings.start.scaleFactor;
+
     // Scale trajectory points
-    const scaledTraj = traj.map((p) => scalePoint(p, scaleFactor));
+    const scaledTraj = traj.map((p) => scalePoint(p, worldScale));
 
     // Trajectory tube
     const tube = generateTube(scaledTraj, tubeRadius, tubeRadius, settings.tubeSegments);
@@ -51,9 +58,6 @@ export function generateAllMeshes(
 
     // Start position marker
     const startPos = scaledTraj[0];
-    const massKg = ic.masses[bodyIdx];
-    const baseRadius = bodyRadius(massKg) * scaleFactor;
-    const markerRadius = baseRadius * safeFactor;
 
     if (settings.start.style !== "none") {
       const startMesh = generateStartMarker(
@@ -61,7 +65,7 @@ export function generateAllMeshes(
         markerRadius,
         settings,
         ic.velocities[bodyIdx],
-        scaleFactor,
+        worldScale,
       );
       if (startMesh.vertices.length > 0) {
         meshes.push({ name: `start_${bodyNum}`, material, mesh: startMesh });
@@ -97,11 +101,15 @@ export function generateAllMeshes(
 
   // Exploding sphere: shatter fragments for colliding bodies
   if (settings.end.style === "exploding" && result.reason === "collision") {
+    // Use the smallest body radius for strut thickness
+    const minTubeRadius = Math.min(
+      ...ic.masses.map((m) => bodyRadius(m) * worldScale * safeScale),
+    );
     const shatterMeshes = generateCollisionShatter(
       result,
       trajectories,
-      scaleFactor,
-      tubeRadius,
+      worldScale,
+      minTubeRadius,
       settings,
     );
     meshes.push(...shatterMeshes);
@@ -202,17 +210,17 @@ function findCollidingPair(trajectories: Vec3[][]): [number, number] {
 function generateCollisionShatter(
   result: SimulationResult,
   trajectories: Vec3[][],
-  scaleFactor: number,
-  tubeRadius: number,
+  worldScale: number,
+  minTubeRadius: number,
   settings: ExportSettings,
 ): NamedMesh[] {
   const meshes: NamedMesh[] = [];
   const ic = result.initialConditions;
-  const safeFactor = Math.min(result.maxSafeScale, settings.end.scaleFactor);
+  const safeScale = Math.min(result.maxSafeScale, settings.end.scaleFactor);
   const [colA, colB] = findCollidingPair(trajectories);
 
-  const scaledTrajA = trajectories[colA].map((p) => scalePoint(p, scaleFactor));
-  const scaledTrajB = trajectories[colB].map((p) => scalePoint(p, scaleFactor));
+  const scaledTrajA = trajectories[colA].map((p) => scalePoint(p, worldScale));
+  const scaledTrajB = trajectories[colB].map((p) => scalePoint(p, worldScale));
   const endA = scaledTrajA[scaledTrajA.length - 1];
   const endB = scaledTrajB[scaledTrajB.length - 1];
 
@@ -226,8 +234,8 @@ function generateCollisionShatter(
   const impactDirB = normalize(sub(impactPoint, endB));
 
   // Sphere radii
-  const radiusA = bodyRadius(ic.masses[colA]) * scaleFactor * safeFactor;
-  const radiusB = bodyRadius(ic.masses[colB]) * scaleFactor * safeFactor;
+  const radiusA = bodyRadius(ic.masses[colA]) * worldScale * safeScale;
+  const radiusB = bodyRadius(ic.masses[colB]) * worldScale * safeScale;
 
   const fragCount = settings.end.fragmentCount;
   const nBack = Math.max(1, Math.floor(fragCount * 0.3));
@@ -260,7 +268,7 @@ function generateCollisionShatter(
 
   // Add fragment meshes and support struts
   const nA = fragmentsA.length;
-  const strutRadius = tubeRadius * 0.15;
+  const strutRadius = minTubeRadius * 0.15;
 
   for (let j = 0; j < simResults.length; j++) {
     const fragMesh = simResults[j];
