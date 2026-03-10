@@ -812,14 +812,62 @@ def generate_trajectory_mesh(
         n_a = len(fragments_a)
         color_a = colors[col_a % len(colors)]
         color_b = colors[col_b % len(colors)]
+        strut_radius = min(tube_radii) * 0.15  # Thin support struts
+
         for j, (frag_verts, frag_faces) in enumerate(sim_results):
-            if len(frag_verts) > 0:
-                all_vertices.append(frag_verts)
-                all_faces.append(frag_faces)
-                if j < n_a:
-                    mesh_names.append(f"end_{col_a + 1}_{color_a}")
-                else:
-                    mesh_names.append(f"end_{col_b + 1}_{color_b}")
+            if len(frag_verts) == 0:
+                continue
+
+            is_a = j < n_a
+            color_name = color_a if is_a else color_b
+            body_idx = col_a if is_a else col_b
+            sphere_center = traj_a[-1] if is_a else traj_b[-1]
+
+            # Add fragment mesh
+            all_vertices.append(frag_verts)
+            all_faces.append(frag_faces)
+            mesh_names.append(f"end_{body_idx + 1}_{color_name}")
+
+            # Support strut: aimed at fragment centroid, stopping at the near surface.
+            # Ray-cast from sphere_center toward centroid, find where it hits
+            # the fragment by testing against each triangle face.
+            frag_centroid = np.mean(frag_verts, axis=0)
+            ray_dir = frag_centroid - sphere_center
+            ray_len = np.linalg.norm(ray_dir)
+            hit_pt = frag_centroid  # fallback
+            if ray_len > 0:
+                ray_dir_n = ray_dir / ray_len
+                # Find nearest ray-triangle intersection (Möller–Trumbore)
+                best_t = ray_len  # don't go past centroid
+                for face in frag_faces:
+                    v0, v1, v2 = frag_verts[face]
+                    e1 = v1 - v0
+                    e2 = v2 - v0
+                    h = np.cross(ray_dir_n, e2)
+                    a = np.dot(e1, h)
+                    if abs(a) < 1e-10:
+                        continue
+                    f_inv = 1.0 / a
+                    s = sphere_center - v0
+                    u = f_inv * np.dot(s, h)
+                    if u < 0 or u > 1:
+                        continue
+                    q = np.cross(s, e1)
+                    v = f_inv * np.dot(ray_dir_n, q)
+                    if v < 0 or u + v > 1:
+                        continue
+                    t = f_inv * np.dot(e2, q)
+                    if 0 < t < best_t:
+                        best_t = t
+                        hit_pt = sphere_center + ray_dir_n * t
+            strut_verts, strut_faces = _generate_tube_mesh(
+                np.array([sphere_center, hit_pt]),
+                strut_radius, strut_radius, segments=8,
+            )
+            if len(strut_verts) > 0:
+                all_vertices.append(strut_verts)
+                all_faces.append(strut_faces)
+                mesh_names.append(f"end_{body_idx + 1}_{color_name}")
 
     return all_vertices, all_faces, mesh_names
 
