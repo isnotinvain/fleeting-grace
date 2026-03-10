@@ -243,17 +243,40 @@ def _generate_sphere_mesh(
 
 
 def _generate_arrow_mesh(
-    origin: np.ndarray,
+    center: np.ndarray,
     direction: np.ndarray,
-    length: float,
-    base_radius: float,
+    shaft_length: float,
+    shaft_radius: float,
+    cone_length: float,
+    cone_radius: float,
     segments: int = 16,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Generate a cone arrow from origin in the given direction."""
-    direction = direction / np.linalg.norm(direction)
-    tip = origin + direction * length
-    points = np.array([origin, tip])
-    return _generate_tube_mesh(points, base_radius, 1e-6, segments)
+    """Generate an arrow (tube shaft + cone head) centered on center.
+
+    The arrow extends from center - dir * half_shaft to center + dir * (half_shaft + cone).
+    """
+    d = direction / np.linalg.norm(direction)
+
+    shaft_start = center
+    shaft_end = center + d * shaft_length
+    shaft_verts, shaft_faces = _generate_tube_mesh(
+        np.array([shaft_start, shaft_end]), shaft_radius, shaft_radius, segments,
+    )
+
+    # Cone: from shaft end to tip
+    cone_tip = shaft_end + d * cone_length
+    cone_verts, cone_faces = _generate_tube_mesh(
+        np.array([shaft_end, cone_tip]), cone_radius, 1e-6, segments,
+    )
+
+    if len(shaft_verts) == 0:
+        return cone_verts, cone_faces
+    if len(cone_verts) == 0:
+        return shaft_verts, shaft_faces
+
+    # Combine
+    cone_faces = cone_faces + len(shaft_verts)
+    return np.vstack([shaft_verts, cone_verts]), np.vstack([shaft_faces, cone_faces])
 
 
 def _generate_armillary_mesh(
@@ -506,6 +529,22 @@ def generate_trajectory_mesh(
                 sphere_radii[col_b],
             )
 
+    # Precompute velocity arrow shaft lengths (proportional to speed)
+    avg_tube_radius = sum(tube_radii) / len(tube_radii)
+    arrow_shaft_radius = avg_tube_radius * 0.45
+    arrow_cone_radius = avg_tube_radius * 0.8
+    arrow_cone_length = avg_tube_radius * 1.6
+    arrow_max_shaft = max(sphere_radii) * 4  # max shaft length for fastest body
+
+    vel_mags = []
+    vel_dirs = []
+    if sim_result.initial_conditions is not None:
+        for vel in sim_result.initial_conditions.velocities:
+            mag = float(np.linalg.norm(vel))
+            vel_mags.append(mag)
+            vel_dirs.append(vel / mag if mag > 0 else None)
+    max_vel = max(vel_mags) if vel_mags else 1.0
+
     all_vertices = []
     all_faces = []
     mesh_names = []
@@ -542,18 +581,14 @@ def generate_trajectory_mesh(
                 all_faces.append(arm_faces)
                 mesh_names.append(f"start_{i + 1}_{color_name}")
 
-            # Velocity arrow pointing in initial velocity direction
-            if sim_result.initial_conditions is not None:
-                vel = sim_result.initial_conditions.velocities[i]
-                arrow_dir = vel / np.linalg.norm(vel) if np.linalg.norm(vel) > 0 else None
-            else:
-                arrow_dir = None
-            if arrow_dir is not None:
-                arrow_origin = start_center + arrow_dir * sphere_radii[i]
-                arrow_length = sphere_radii[i] * 1.5
-                arrow_base = sphere_radii[i] * 0.3
+            # Velocity arrow: shaft length proportional to speed, centered on sphere
+            if i < len(vel_dirs) and vel_dirs[i] is not None:
+                shaft_length = arrow_max_shaft * (vel_mags[i] / max_vel)
+                arrow_origin = start_center + vel_dirs[i] * sphere_radii[i]
                 arrow_verts, arrow_faces = _generate_arrow_mesh(
-                    arrow_origin, arrow_dir, arrow_length, arrow_base,
+                    arrow_origin, vel_dirs[i],
+                    shaft_length, arrow_shaft_radius,
+                    arrow_cone_length, arrow_cone_radius,
                 )
                 if len(arrow_verts) > 0:
                     all_vertices.append(arrow_verts)
