@@ -15,32 +15,26 @@ from fleeting_grace.termination import TrajectoryTooLarge
 class PipeSettings:
     """Settings for pipe/tube generation.
 
-    If proportional=True (default), start_radius and end_radius are multipliers
-    of the body's actual radius. If proportional=False, they're absolute values.
+    Tube radii are computed automatically via physics-based scaling:
+    the largest radii that don't create false collisions, proportional
+    to each body's actual radius.
     """
 
-    start_radius: float = 2  # Radius at start (multiplier if proportional, absolute otherwise)
-    end_radius: float = 2  # Radius at end (multiplier if proportional, absolute otherwise)
     segments: int = 64  # Number of segments around the circumference
-    proportional: bool = False  # If True, radii are multiples of body radius
-    auto_radius: bool = True  # If True, compute max radius that avoids overlap
-
-    @property
-    def tapered(self) -> bool:
-        return self.start_radius != self.end_radius
 
 
 @dataclass
 class SphereSettings:
     """Settings for endpoint spheres.
 
-    The largest sphere will be rendered at `max_size`, and the other spheres
-    are scaled proportionally based on their actual body radii.
+    Spheres are sized at `scale_factor` times the tube radius, proportional
+    to body mass. If the simulation ends in a collision, the colliding
+    spheres are backed up along their trajectories until just touching.
     """
 
-    max_size: float = 10.0  # Size of the largest sphere (in output units)
+    scale_factor: float = 2.0  # Sphere radius as a multiple of tube radius
     segments: int = 64  # Latitude/longitude segments
-    show_start: bool = True  # No sphere at trajectory start
+    show_start: bool = True  # Sphere at trajectory start
     show_end: bool = True  # Sphere at trajectory end
 
 
@@ -63,20 +57,6 @@ def simulate_from_base64(
     termination = TrajectoryTooLarge(MAX_RADIUS)
     return run_simulation(ic, termination, max_steps)
 
-
-def _normalize_trajectory(trajectory: np.ndarray, scale: float = 100.0) -> np.ndarray:
-    """Normalize trajectory to reasonable size for 3D printing."""
-    # Convert from meters to AU, then scale to output units
-    traj_au = trajectory / AU
-    # Center and scale
-    center = np.mean(traj_au, axis=0)
-    traj_centered = traj_au - center
-    max_extent = np.max(np.abs(traj_centered))
-    if max_extent > 0:
-        traj_normalized = traj_centered / max_extent * scale
-    else:
-        traj_normalized = traj_centered
-    return traj_normalized
 
 
 def _compute_frenet_frame(points: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -387,17 +367,11 @@ def generate_trajectory_mesh(
     center = np.mean(combined, axis=0)
     max_extent = np.max(np.abs(combined - center))
 
-    # Get body radii from masses (if available)
+    # Get body radii in AU
     body_radii_au = []
-    if sim_result.initial_conditions is not None:
-        for mass in sim_result.initial_conditions.masses:
-            # Compute actual radius and convert to AU
-            radius_meters = compute_body_radius(mass)
-            radius_au = radius_meters / AU
-            body_radii_au.append(radius_au)
-    else:
-        # Default fallback
-        body_radii_au = [0.01, 0.01, 0.01]  # Small default in AU
+    for mass in sim_result.initial_conditions.masses:
+        radius_meters = compute_body_radius(mass)
+        body_radii_au.append(radius_meters / AU)
 
     # Normalize all trajectories
     normalized_trajectories = []
@@ -409,32 +383,14 @@ def generate_trajectory_mesh(
             traj_normalized = traj_au - center
         normalized_trajectories.append(traj_normalized)
 
-    # Compute display radii for bodies
-    if pipe_settings.auto_radius and sim_result.initial_conditions is not None:
-        # Physics-based: find max scale factor that avoids false collisions
-        safe_scale = _compute_max_safe_scale(
-            sim_result.initial_conditions,
-            sim_result.steps,
-        )
-        # Body radii in model units, scaled by the safe factor
-        display_radii = [
-            r_au / max_extent * scale * safe_scale for r_au in body_radii_au
-        ]
-        print(f"[auto-radius] scale={safe_scale:.2f}x, tube radii: {', '.join(f'{r:.4f}' for r in display_radii)}")
-    else:
-        # Manual sizing: largest sphere = max_size, others proportional
-        max_body_radius = max(body_radii_au)
-        if max_body_radius > 0:
-            sphere_scale_factor = sphere_settings.max_size / max_body_radius
-        else:
-            sphere_scale_factor = 1.0
-        display_radii = [r * sphere_scale_factor for r in body_radii_au]
-
-    # Compute sphere radii (2x tube radius in auto mode)
-    if pipe_settings.auto_radius:
-        sphere_radii = [r * 2 for r in display_radii]
-    else:
-        sphere_radii = list(display_radii)
+    # Physics-based tube radii: largest that don't create false collisions
+    safe_scale = _compute_max_safe_scale(
+        sim_result.initial_conditions,
+        sim_result.steps,
+    )
+    tube_radii = [r_au / max_extent * scale * safe_scale for r_au in body_radii_au]
+    sphere_radii = [r * sphere_settings.scale_factor for r in tube_radii]
+    print(f"[auto-radius] scale={safe_scale:.2f}x, tube radii: {', '.join(f'{r:.4f}' for r in tube_radii)}")
 
     # Find collision end positions if sim ended in collision
     end_positions = [t[-1].copy() for t in normalized_trajectories]
@@ -466,21 +422,10 @@ def generate_trajectory_mesh(
     for i, traj_normalized in enumerate(normalized_trajectories):
         color_name = colors[i % len(colors)]
 
-        # Compute tube radii
-        if pipe_settings.auto_radius:
-            tube_start_radius = display_radii[i]
-            tube_end_radius = display_radii[i]
-        elif pipe_settings.proportional:
-            tube_start_radius = display_radii[i] * pipe_settings.start_radius
-            tube_end_radius = display_radii[i] * pipe_settings.end_radius
-        else:
-            tube_start_radius = pipe_settings.start_radius
-            tube_end_radius = pipe_settings.end_radius
-
         tube_verts, tube_faces = _generate_tube_mesh(
             traj_normalized,
-            tube_start_radius,
-            tube_end_radius,
+            tube_radii[i],
+            tube_radii[i],
             pipe_settings.segments,
         )
         if len(tube_verts) > 0:

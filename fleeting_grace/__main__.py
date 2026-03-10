@@ -42,6 +42,7 @@ def main():
     parser.add_argument("--export-mesh", type=str, metavar="BASE64", help="Export a mesh from a single base64-encoded trajectory and exit")
     parser.add_argument("--export-mesh-format", type=str, default="obj", choices=["obj", "stl"], help="Mesh export format (default: obj)")
     parser.add_argument("--export-mesh-output", type=str, default=None, metavar="FILE", help="Mesh output path (default: trajectory_mesh.obj/stl)")
+    parser.add_argument("--sphere-scale", type=float, default=2.0, help="Sphere radius as a multiple of tube radius (default: 2.0)")
     parser.add_argument("--optimize", action="store_true", help="Run L-BFGS-B optimization from best random result")
     parser.add_argument("--optimize-iters", type=int, default=100, help="Max iterations for optimizer (default: 100)")
     parser.add_argument("--optimize-velocities-only", action="store_true", help="Only optimize velocities (faster, 9 params instead of 21)")
@@ -51,11 +52,12 @@ def main():
 
     # Export mesh from a single base64 and exit
     if args.export_mesh:
-        from fleeting_grace.mesh import create_mesh_from_base64
+        from fleeting_grace.mesh import SphereSettings, create_mesh_from_base64
 
         fmt = args.export_mesh_format
         output = args.export_mesh_output or f"trajectory_mesh.{fmt}"
-        path = create_mesh_from_base64(args.export_mesh, output, format=fmt)
+        sphere_settings = SphereSettings(scale_factor=args.sphere_scale)
+        path = create_mesh_from_base64(args.export_mesh, output, sphere_settings=sphere_settings, format=fmt)
         print(f"Mesh written to: {path}")
         return
 

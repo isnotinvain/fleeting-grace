@@ -111,15 +111,13 @@ def _generate_mesh_data(
     """Generate mesh data for Three.js."""
     from fleeting_grace.mesh import PipeSettings, SphereSettings, generate_trajectory_mesh
 
-    # Get settings
+    # Get settings (viewer uses fewer segments for performance)
     if mesh_settings:
-        pipe_settings = mesh_settings.get("pipe_settings", PipeSettings())
-        sphere_settings = mesh_settings.get("sphere_settings", SphereSettings())
+        pipe_settings = mesh_settings.get("pipe_settings", PipeSettings(segments=12))
+        sphere_settings = mesh_settings.get("sphere_settings", SphereSettings(segments=12))
     else:
-        # Proportional mode: pipe starts at sphere size (1.0x) and tapers to 10% at end
-        pipe_settings = PipeSettings(start_radius=1, end_radius=1, segments=12, proportional=False)
-        # Largest sphere will be max_size, others scaled proportionally by body radius
-        sphere_settings = SphereSettings(max_size=5.0, segments=12)
+        pipe_settings = PipeSettings(segments=12)
+        sphere_settings = SphereSettings(segments=12)
 
     # Scale to match the normalized coordinates (AU-based, centered)
     # The viewer uses AU coordinates centered on the trajectory center
