@@ -242,6 +242,52 @@ def _generate_sphere_mesh(
     return vertices, np.array(faces)
 
 
+def _generate_armillary_mesh(
+    center: np.ndarray,
+    radius: float,
+    ring_thickness: float | None = None,
+    ring_points: int = 64,
+    tube_segments: int = 8,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Generate an armillary sphere (3 orthogonal ring tubes)."""
+    if ring_thickness is None:
+        ring_thickness = radius * 0.1
+
+    all_verts = []
+    all_faces = []
+    offset = 0
+
+    # 3 great circles in XY, XZ, YZ planes
+    for axis in range(3):
+        # Generate circular path
+        angles = np.linspace(0, 2 * np.pi, ring_points, endpoint=False)
+        path = np.zeros((ring_points, 3))
+        if axis == 0:  # XY plane
+            path[:, 0] = np.cos(angles) * radius
+            path[:, 1] = np.sin(angles) * radius
+        elif axis == 1:  # XZ plane
+            path[:, 0] = np.cos(angles) * radius
+            path[:, 2] = np.sin(angles) * radius
+        else:  # YZ plane
+            path[:, 1] = np.cos(angles) * radius
+            path[:, 2] = np.sin(angles) * radius
+        path += center
+
+        # Close the loop by appending the first few points
+        path = np.vstack([path, path[:2]])
+
+        verts, faces = _generate_tube_mesh(path, ring_thickness, ring_thickness, tube_segments)
+        if len(verts) > 0:
+            all_verts.append(verts)
+            all_faces.append(faces + offset)
+            offset += len(verts)
+
+    if not all_verts:
+        return np.array([]), np.array([])
+
+    return np.vstack(all_verts), np.vstack(all_faces)
+
+
 def _compute_max_safe_scale(ic: InitialConditions, n_steps: int) -> float:
     """Find the largest body-radius scale factor that doesn't create new collisions.
 
@@ -435,12 +481,13 @@ def generate_trajectory_mesh(
             mesh_names.append(f"trajectory_{i + 1}_{color_name}")
 
         if sphere_settings.show_start and len(traj_normalized) > 0:
-            sphere_verts, sphere_faces = _generate_sphere_mesh(
-                traj_normalized[0], sphere_radii[i], sphere_settings.segments,
+            arm_verts, arm_faces = _generate_armillary_mesh(
+                traj_normalized[0], sphere_radii[i],
             )
-            all_vertices.append(sphere_verts)
-            all_faces.append(sphere_faces)
-            mesh_names.append(f"start_{i + 1}_{color_name}")
+            if len(arm_verts) > 0:
+                all_vertices.append(arm_verts)
+                all_faces.append(arm_faces)
+                mesh_names.append(f"start_{i + 1}_{color_name}")
 
         if sphere_settings.show_end and len(traj_normalized) > 0:
             sphere_verts, sphere_faces = _generate_sphere_mesh(
