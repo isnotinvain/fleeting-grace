@@ -306,6 +306,49 @@ def _compute_max_safe_scale(ic: InitialConditions, n_steps: int) -> float:
     return encounters[0][0]
 
 
+def _find_collision_end_positions(
+    traj_a: np.ndarray,
+    traj_b: np.ndarray,
+    sphere_radius_a: float,
+    sphere_radius_b: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Walk both trajectories backwards from the end to find just-touching positions.
+
+    Parameterizes both trajectories by fraction from end (1.0 = end, 0.0 = start)
+    and moves both backwards equally until their spheres no longer overlap.
+    """
+    sum_radii = sphere_radius_a + sphere_radius_b
+    n_a, n_b = len(traj_a), len(traj_b)
+
+    def interp(traj: np.ndarray, t: float) -> np.ndarray:
+        """Interpolate trajectory at fractional position t (0=start, 1=end)."""
+        idx = t * (len(traj) - 1)
+        i = int(idx)
+        if i >= len(traj) - 1:
+            return traj[-1]
+        frac = idx - i
+        return traj[i] * (1 - frac) + traj[i + 1] * frac
+
+    # Binary search for the t where distance = sum_radii
+    t_lo, t_hi = 0.0, 1.0
+    # First check if they even overlap at the end
+    if np.linalg.norm(traj_a[-1] - traj_b[-1]) >= sum_radii:
+        return traj_a[-1].copy(), traj_b[-1].copy()
+
+    for _ in range(50):
+        t_mid = (t_lo + t_hi) / 2
+        pos_a = interp(traj_a, t_mid)
+        pos_b = interp(traj_b, t_mid)
+        dist = np.linalg.norm(pos_a - pos_b)
+        if dist < sum_radii:
+            t_hi = t_mid
+        else:
+            t_lo = t_mid
+
+    t = (t_lo + t_hi) / 2
+    return interp(traj_a, t), interp(traj_b, t)
+
+
 def generate_trajectory_mesh(
     sim_result: SimulationResult,
     pipe_settings: PipeSettings | None = None,
@@ -387,21 +430,49 @@ def generate_trajectory_mesh(
             sphere_scale_factor = 1.0
         display_radii = [r * sphere_scale_factor for r in body_radii_au]
 
+    # Compute sphere radii (2x tube radius in auto mode)
+    if pipe_settings.auto_radius:
+        sphere_radii = [r * 2 for r in display_radii]
+    else:
+        sphere_radii = list(display_radii)
+
+    # Find collision end positions if sim ended in collision
+    end_positions = [t[-1].copy() for t in normalized_trajectories]
+    if sim_result.reason == "collision" and sphere_settings.show_end:
+        # Find which pair collided (closest at the end)
+        n_bodies = len(normalized_trajectories)
+        min_dist = float("inf")
+        col_a, col_b = 0, 1
+        for a in range(n_bodies):
+            for b in range(a + 1, n_bodies):
+                dist = float(np.linalg.norm(end_positions[a] - end_positions[b]))
+                if dist < min_dist:
+                    min_dist = dist
+                    col_a, col_b = a, b
+
+        # Back up along trajectories until spheres just touch
+        if min_dist < sphere_radii[col_a] + sphere_radii[col_b]:
+            end_positions[col_a], end_positions[col_b] = _find_collision_end_positions(
+                normalized_trajectories[col_a],
+                normalized_trajectories[col_b],
+                sphere_radii[col_a],
+                sphere_radii[col_b],
+            )
+
     all_vertices = []
     all_faces = []
     mesh_names = []
 
     for i, traj_normalized in enumerate(normalized_trajectories):
-        body_display_radius = display_radii[i]
         color_name = colors[i % len(colors)]
 
         # Compute tube radii
         if pipe_settings.auto_radius:
-            tube_start_radius = body_display_radius
-            tube_end_radius = body_display_radius
+            tube_start_radius = display_radii[i]
+            tube_end_radius = display_radii[i]
         elif pipe_settings.proportional:
-            tube_start_radius = body_display_radius * pipe_settings.start_radius
-            tube_end_radius = body_display_radius * pipe_settings.end_radius
+            tube_start_radius = display_radii[i] * pipe_settings.start_radius
+            tube_end_radius = display_radii[i] * pipe_settings.end_radius
         else:
             tube_start_radius = pipe_settings.start_radius
             tube_end_radius = pipe_settings.end_radius
@@ -417,15 +488,18 @@ def generate_trajectory_mesh(
             all_faces.append(tube_faces)
             mesh_names.append(f"trajectory_{i + 1}_{color_name}")
 
-        # Generate endpoint spheres (sized proportionally, largest = max_size)
         if sphere_settings.show_start and len(traj_normalized) > 0:
-            sphere_verts, sphere_faces = _generate_sphere_mesh(traj_normalized[0], body_display_radius, sphere_settings.segments)
+            sphere_verts, sphere_faces = _generate_sphere_mesh(
+                traj_normalized[0], sphere_radii[i], sphere_settings.segments,
+            )
             all_vertices.append(sphere_verts)
             all_faces.append(sphere_faces)
             mesh_names.append(f"start_{i + 1}_{color_name}")
 
         if sphere_settings.show_end and len(traj_normalized) > 0:
-            sphere_verts, sphere_faces = _generate_sphere_mesh(traj_normalized[-1], body_display_radius, sphere_settings.segments)
+            sphere_verts, sphere_faces = _generate_sphere_mesh(
+                end_positions[i], sphere_radii[i], sphere_settings.segments,
+            )
             all_vertices.append(sphere_verts)
             all_faces.append(sphere_faces)
             mesh_names.append(f"end_{i + 1}_{color_name}")
