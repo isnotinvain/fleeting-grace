@@ -73,7 +73,23 @@ export function ResultsPage() {
             {scoreFunctions.map((fn, i) => (
               <div key={fn.name} className="bg-gray-900 rounded-lg p-3 border border-gray-800">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm text-gray-300">{fn.name}</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setScoringWeight(i, 0)}
+                      className="w-3 h-3 rounded-full bg-red-900 hover:bg-red-600 transition-colors shrink-0"
+                      title="Set to 0"
+                    />
+                    <button
+                      onClick={() => {
+                        for (let j = 0; j < scoreFunctions.length; j++) {
+                          setScoringWeight(j, j === i ? 1 : 0);
+                        }
+                      }}
+                      className="w-3 h-3 rounded-full bg-green-900 hover:bg-green-600 transition-colors shrink-0"
+                      title="Solo: set this to 1, all others to 0"
+                    />
+                    <span className="text-sm text-gray-300">{fn.name}</span>
+                  </div>
                   <span className="text-xs text-gray-500 font-mono w-6 text-right">
                     {scoringWeights[i]}
                   </span>
