@@ -6,8 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
-from fleeting_grace.config import AU, MAX_RADIUS, MAX_STEPS
-from fleeting_grace.simulation import InitialConditions, SimulationResult, compute_body_radius, run_simulation
+from fleeting_grace.config import AU, DT, MAX_RADIUS, MAX_STEPS
+from fleeting_grace.simulation import InitialConditions, SimulationResult, compute_accelerations, compute_body_radius, run_simulation
 from fleeting_grace.termination import TrajectoryTooLarge
 
 
@@ -23,6 +23,7 @@ class PipeSettings:
     end_radius: float = 2  # Radius at end (multiplier if proportional, absolute otherwise)
     segments: int = 64  # Number of segments around the circumference
     proportional: bool = False  # If True, radii are multiples of body radius
+    auto_radius: bool = True  # If True, compute max radius that avoids overlap
 
     @property
     def tapered(self) -> bool:
@@ -261,6 +262,50 @@ def _generate_sphere_mesh(
     return vertices, np.array(faces)
 
 
+def _compute_max_safe_scale(ic: InitialConditions, n_steps: int) -> float:
+    """Find the largest body-radius scale factor that doesn't create new collisions.
+
+    Replays the simulation physics, finds all close-encounter local minima,
+    and returns the smallest scale factor (= tightest constraint). Terminal
+    collisions don't appear as local minima since the sim stops there, so
+    they're naturally excluded.
+    """
+    positions = ic.positions.copy()
+    velocities = ic.velocities.copy()
+    masses = ic.masses.copy()
+    body_radii = [compute_body_radius(m) for m in masses]
+    acc = compute_accelerations(positions, masses)
+
+    # Record pairwise distances at each step
+    pairs = [(0, 1), (0, 2), (1, 2)]
+    pair_dists: dict[tuple[int, int], list[float]] = {p: [] for p in pairs}
+
+    for step in range(n_steps):
+        for i, j in pairs:
+            dist = float(np.linalg.norm(positions[i] - positions[j]))
+            pair_dists[(i, j)].append(dist)
+
+        new_positions = positions + velocities * DT + 0.5 * acc * (DT**2)
+        new_acc = compute_accelerations(new_positions, masses)
+        new_velocities = velocities + 0.5 * (acc + new_acc) * DT
+        positions, velocities, acc = new_positions, new_velocities, new_acc
+
+    # Find local minima (close encounters) and their scale factors
+    encounters = []
+    for (a, b), dists in pair_dists.items():
+        combined_radius = body_radii[a] + body_radii[b]
+        for i in range(1, len(dists) - 1):
+            if dists[i] < dists[i - 1] and dists[i] < dists[i + 1]:
+                scale_factor = dists[i] / combined_radius
+                encounters.append((scale_factor, i, a, b))
+
+    if not encounters:
+        return 1.0
+
+    encounters.sort()
+    return encounters[0][0]
+
+
 def generate_trajectory_mesh(
     sim_result: SimulationResult,
     pipe_settings: PipeSettings | None = None,
@@ -311,42 +356,53 @@ def generate_trajectory_mesh(
         # Default fallback
         body_radii_au = [0.01, 0.01, 0.01]  # Small default in AU
 
-    # Compute sphere sizes: largest sphere = max_size, others proportional
-    max_body_radius = max(body_radii_au)
-    if max_body_radius > 0:
-        sphere_scale_factor = sphere_settings.max_size / max_body_radius
-    else:
-        sphere_scale_factor = 1.0
+    # Normalize all trajectories
+    normalized_trajectories = []
+    for traj in sim_result.trajectories:
+        traj_au = np.asarray(traj) / AU
+        if max_extent > 0:
+            traj_normalized = (traj_au - center) / max_extent * scale
+        else:
+            traj_normalized = traj_au - center
+        normalized_trajectories.append(traj_normalized)
 
-    # Pre-compute display radii for all bodies
-    display_radii = [r * sphere_scale_factor for r in body_radii_au]
+    # Compute display radii for bodies
+    if pipe_settings.auto_radius and sim_result.initial_conditions is not None:
+        # Physics-based: find max scale factor that avoids false collisions
+        safe_scale = _compute_max_safe_scale(
+            sim_result.initial_conditions,
+            sim_result.steps,
+        )
+        # Body radii in model units, scaled by the safe factor
+        display_radii = [
+            r_au / max_extent * scale * safe_scale for r_au in body_radii_au
+        ]
+        print(f"[auto-radius] scale={safe_scale:.2f}x, tube radii: {', '.join(f'{r:.4f}' for r in display_radii)}")
+    else:
+        # Manual sizing: largest sphere = max_size, others proportional
+        max_body_radius = max(body_radii_au)
+        if max_body_radius > 0:
+            sphere_scale_factor = sphere_settings.max_size / max_body_radius
+        else:
+            sphere_scale_factor = 1.0
+        display_radii = [r * sphere_scale_factor for r in body_radii_au]
 
     all_vertices = []
     all_faces = []
     mesh_names = []
 
-    for i, traj in enumerate(sim_result.trajectories):
-        traj_au = np.asarray(traj) / AU
-
-        # Normalize trajectory positions
-        if max_extent > 0:
-            traj_normalized = (traj_au - center) / max_extent * scale
-        else:
-            traj_normalized = traj_au - center
-
-        # Get this body's display radius (already computed proportionally)
+    for i, traj_normalized in enumerate(normalized_trajectories):
         body_display_radius = display_radii[i]
-
         color_name = colors[i % len(colors)]
 
-        # Generate tube mesh
-        # Compute actual radii based on proportional setting
-        if pipe_settings.proportional:
-            # Radii are multipliers of the body's displayed radius (matching sphere size)
+        # Compute tube radii
+        if pipe_settings.auto_radius:
+            tube_start_radius = body_display_radius
+            tube_end_radius = body_display_radius
+        elif pipe_settings.proportional:
             tube_start_radius = body_display_radius * pipe_settings.start_radius
             tube_end_radius = body_display_radius * pipe_settings.end_radius
         else:
-            # Radii are absolute values
             tube_start_radius = pipe_settings.start_radius
             tube_end_radius = pipe_settings.end_radius
 
