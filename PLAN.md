@@ -384,6 +384,8 @@ postMessage({                  →     Receives settings + ICs
 
 **Browser verification is part of the iteration loop.** In addition to running unit tests, use Chrome browser automation (via Claude in Chrome) to visually check work in the running dev server as you go. This means: run `npm run dev`, open the app in Chrome, and verify that UI changes look correct, interactions work, and there are no console errors. Don't rely solely on unit tests — visual confirmation catches layout issues, rendering bugs, and integration problems that tests miss.
 
+**Use non-blocking commands so the user can step away.** Always use `run_in_background: true` for long-running commands like `npm run dev`, `npx vite`, test runs, etc. This avoids requiring the user to manually approve each command. Keep the workflow autonomous — the user should be able to walk away while you iterate.
+
 What gets tested:
 - All simulation functions (integration, collision detection, body radius, IC generation)
 - Trajectory simplification (Douglas-Peucker)
