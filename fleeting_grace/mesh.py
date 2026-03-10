@@ -388,22 +388,21 @@ def _generate_shatter_mesh(
     impact_dist = np.linalg.norm(impact_dir)
     impact_dir_norm = impact_dir / impact_dist if impact_dist > 0 else np.array([1.0, 0.0, 0.0])
 
-    # Voronoi seeds: many near impact (small chunks), few on far side (big chunks)
+    # Voronoi seeds: 2-3 on the far side (big chunks with small crack),
+    # rest clustered near impact
     seeds = []
-    # 80% of seeds near impact — tightly clustered for small fragments
-    n_near = int(num_fragments * 0.8)
-    for _ in range(n_near):
+    n_back = 3
+    for _ in range(n_back):
+        pt = rng.standard_normal(3)
+        pt = pt / np.linalg.norm(pt)
+        pt = pt - impact_dir_norm * 1.5
+        pt = pt / np.linalg.norm(pt)
+        seeds.append(center + pt * radius * 0.4)
+    # All remaining seeds clustered near impact
+    for _ in range(num_fragments - n_back):
         pt = rng.standard_normal(3)
         pt = pt / np.linalg.norm(pt)
         pt = pt + impact_dir_norm * 2.5
-        pt = pt / np.linalg.norm(pt)
-        r = radius * rng.uniform(0.2, 0.8) ** (1 / 3)
-        seeds.append(center + pt * r)
-    # 20% on far side — spread out for big chunks
-    for _ in range(num_fragments - n_near):
-        pt = rng.standard_normal(3)
-        pt = pt / np.linalg.norm(pt)
-        pt = pt - impact_dir_norm * 1.0
         pt = pt / np.linalg.norm(pt)
         r = radius * rng.uniform(0.2, 0.8) ** (1 / 3)
         seeds.append(center + pt * r)
@@ -456,33 +455,43 @@ def _generate_shatter_mesh(
         # Fragment center
         frag_center = np.mean(frag_verts, axis=0)
 
-        # Pull apart: displace outward from sphere center
-        gap_dir = frag_center - center
-        gap_norm = np.linalg.norm(gap_dir)
-        if gap_norm > 0:
-            gap_displacement = gap_dir / gap_norm * gap_scale * radius
+        # Back chunks get only a small crack, impact chunks get full ejection
+        if cell_id < n_back:
+            # Just a small gap to show a crack
+            gap_dir = frag_center - center
+            gap_norm = np.linalg.norm(gap_dir)
+            if gap_norm > 0:
+                displaced_verts = frag_verts + gap_dir / gap_norm * gap_scale * radius * 0.5
+            else:
+                displaced_verts = frag_verts
         else:
-            gap_displacement = np.zeros(3)
+            # Pull apart: displace outward from sphere center
+            gap_dir = frag_center - center
+            gap_norm = np.linalg.norm(gap_dir)
+            if gap_norm > 0:
+                gap_displacement = gap_dir / gap_norm * gap_scale * radius
+            else:
+                gap_displacement = np.zeros(3)
 
-        # Extra ejection near impact
-        dist_to_impact = np.linalg.norm(frag_center - impact_point)
-        proximity = max(0.0, 1.0 - dist_to_impact / (radius * 2))
-        proximity = proximity ** 0.5
+            # Ejection near impact
+            dist_to_impact = np.linalg.norm(frag_center - impact_point)
+            proximity = max(0.0, 1.0 - dist_to_impact / (radius * 2))
+            proximity = proximity ** 0.5
 
-        eject_dir = frag_center - impact_point
-        eject_norm = np.linalg.norm(eject_dir)
-        if eject_norm > 0:
-            eject_dir = eject_dir / eject_norm
-        else:
-            eject_dir = rng.standard_normal(3)
-            eject_dir /= np.linalg.norm(eject_dir)
+            eject_dir = frag_center - impact_point
+            eject_norm = np.linalg.norm(eject_dir)
+            if eject_norm > 0:
+                eject_dir = eject_dir / eject_norm
+            else:
+                eject_dir = rng.standard_normal(3)
+                eject_dir /= np.linalg.norm(eject_dir)
 
-        ejection = (
-            eject_dir * proximity * 0.7
-            + vel_dir * proximity * 0.3
-        ) * displacement_scale * radius
+            ejection = (
+                eject_dir * proximity * 0.7
+                + vel_dir * proximity * 0.3
+            ) * displacement_scale * radius
 
-        displaced_verts = frag_verts + gap_displacement + ejection
+            displaced_verts = frag_verts + gap_displacement + ejection
 
         all_verts.append(displaced_verts)
         all_faces.append(frag_faces + offset)
