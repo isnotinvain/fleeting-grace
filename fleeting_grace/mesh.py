@@ -465,15 +465,7 @@ def _generate_shatter_mesh(
             else:
                 displaced_verts = frag_verts
         else:
-            # Pull apart: displace outward from sphere center
-            gap_dir = frag_center - center
-            gap_norm = np.linalg.norm(gap_dir)
-            if gap_norm > 0:
-                gap_displacement = gap_dir / gap_norm * gap_scale * radius
-            else:
-                gap_displacement = np.zeros(3)
-
-            # Ejection near impact
+            # Ejection from impact point
             dist_to_impact = np.linalg.norm(frag_center - impact_point)
             proximity = max(0.0, 1.0 - dist_to_impact / (radius * 2))
             proximity = proximity ** 0.5
@@ -491,7 +483,35 @@ def _generate_shatter_mesh(
                 + vel_dir * proximity * 0.3
             ) * displacement_scale * radius
 
-            displaced_verts = frag_verts + gap_displacement + ejection
+            displaced_verts = frag_verts + ejection
+
+        # Rotate chunk outward — tipping away from impact
+        # Axis: perpendicular to the line from impact to fragment
+        tip_dir = frag_center - impact_point
+        tip_norm = np.linalg.norm(tip_dir)
+        if tip_norm > 0:
+            tip_dir = tip_dir / tip_norm
+            # Find a rotation axis perpendicular to the tip direction
+            if abs(tip_dir[0]) < 0.9:
+                rot_axis = np.cross(tip_dir, [1, 0, 0])
+            else:
+                rot_axis = np.cross(tip_dir, [0, 1, 0])
+            rot_axis = rot_axis / np.linalg.norm(rot_axis)
+
+            # Angle proportional to proximity (more rotation near impact)
+            dist_to_impact = np.linalg.norm(frag_center - impact_point)
+            prox = max(0.0, 1.0 - dist_to_impact / (radius * 2))
+            angle = prox * 0.3  # Up to ~17 degrees
+
+            # Rodrigues rotation around fragment center
+            cos_a, sin_a = np.cos(angle), np.sin(angle)
+            centered = displaced_verts - frag_center
+            rotated = (
+                centered * cos_a
+                + np.cross(rot_axis, centered) * sin_a
+                + rot_axis * np.dot(centered, rot_axis)[:, np.newaxis] * (1 - cos_a)
+            )
+            displaced_verts = rotated + frag_center
 
         all_verts.append(displaced_verts)
         all_faces.append(frag_faces + offset)
