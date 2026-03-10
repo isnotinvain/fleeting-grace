@@ -221,3 +221,7 @@ trajectory_viewer.html
 node_modules/
 dist/
 *.tsbuildinfo
+
+# Playwright
+test-results/
+playwright-report/
