@@ -283,6 +283,7 @@ def _generate_armillary_mesh(
     center: np.ndarray,
     radius: float,
     direction: np.ndarray | None = None,
+    stretch: float = 1.0,
     ring_thickness: float | None = None,
     ring_points: int = 64,
     tube_segments: int = 8,
@@ -290,7 +291,8 @@ def _generate_armillary_mesh(
     """Generate an armillary sphere (3 orthogonal ring tubes).
 
     If direction is given, orients the armillary so one ring's axis
-    aligns with that direction (the sphere "points" that way).
+    aligns with that direction. If stretch > 1, elongates the sphere
+    along that direction (motion blur effect).
     """
     if ring_thickness is None:
         ring_thickness = radius * 0.1
@@ -316,10 +318,18 @@ def _generate_armillary_mesh(
     axes_pairs = [(right, up), (right, fwd), (up, fwd)]
     for ax1, ax2 in axes_pairs:
         angles = np.linspace(0, 2 * np.pi, ring_points, endpoint=False)
-        path = np.array([
-            center + radius * (np.cos(a) * ax1 + np.sin(a) * ax2)
-            for a in angles
-        ])
+        path = []
+        for a in angles:
+            pt = radius * (np.cos(a) * ax1 + np.sin(a) * ax2)
+            if stretch != 1.0:
+                fwd_comp = np.dot(pt, fwd)
+                # t=0 at front (velocity dir), t=1 at back
+                t = (1 - fwd_comp / radius) / 2
+                # Cubic ease-in: front is unaffected, back gets full stretch
+                ease = t ** 3
+                pt += fwd * fwd_comp * (stretch - 1) * ease
+            path.append(center + pt)
+        path = np.array(path)
 
         # Close the loop by appending the first few points
         path = np.vstack([path, path[:2]])
@@ -573,8 +583,12 @@ def generate_trajectory_mesh(
             exit_dir = traj_normalized[0] - start_center
             if np.linalg.norm(exit_dir) < 1e-10:
                 exit_dir = None
+            # Stretch proportional to velocity (1.0 = slowest, up to 3.0 = fastest)
+            vel_stretch = 1.0
+            if i < len(vel_mags) and max_vel > 0:
+                vel_stretch = 1.0 + 2.0 * (vel_mags[i] / max_vel)
             arm_verts, arm_faces = _generate_armillary_mesh(
-                start_center, sphere_radii[i], direction=exit_dir,
+                start_center, sphere_radii[i], direction=exit_dir, stretch=vel_stretch,
             )
             if len(arm_verts) > 0:
                 all_vertices.append(arm_verts)
