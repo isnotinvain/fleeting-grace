@@ -365,6 +365,125 @@ def _truncate_start_at_sphere(
     return traj
 
 
+def _generate_shatter_mesh(
+    center: np.ndarray,
+    radius: float,
+    impact_point: np.ndarray,
+    velocity: np.ndarray,
+    num_fragments: int = 3,
+    displacement_scale: float = 0.3,
+    gap_scale: float = 0.08,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Generate a shattered sphere — split into chunks pulled apart.
+
+    Uses 3 random cutting planes through the center to slice the sphere
+    into convex pieces, then displaces them.
+    """
+    from scipy.spatial import ConvexHull
+
+    rng = np.random.default_rng(hash(tuple(center)) & 0xFFFFFFFF)
+
+    # Generate random cutting planes through the center
+    planes = []
+    for _ in range(num_fragments):
+        normal = rng.standard_normal(3)
+        normal = normal / np.linalg.norm(normal)
+        planes.append(normal)
+
+    # Generate a dense point cloud filling the sphere
+    n_pts = 5000
+    pts = []
+    for _ in range(n_pts):
+        p = rng.standard_normal(3)
+        p = p / np.linalg.norm(p)
+        r = radius * rng.uniform(0, 1) ** (1 / 3)
+        pts.append(center + p * r)
+    pts = np.array(pts)
+
+    # Assign each point to a cell based on which side of each plane it's on
+    # With N planes we get up to 2^N cells
+    signs = np.zeros((n_pts, len(planes)), dtype=int)
+    for j, normal in enumerate(planes):
+        dots = np.dot(pts - center, normal)
+        signs[:, j] = (dots > 0).astype(int)
+
+    # Convert sign pattern to cell ID
+    cell_ids = np.zeros(n_pts, dtype=int)
+    for j in range(len(planes)):
+        cell_ids += signs[:, j] * (2 ** j)
+
+    # Velocity direction
+    vel_mag = np.linalg.norm(velocity)
+    vel_dir = velocity / vel_mag if vel_mag > 0 else np.zeros(3)
+
+    all_verts = []
+    all_faces = []
+    offset = 0
+
+    unique_cells = np.unique(cell_ids)
+    for cell_id in unique_cells:
+        cell_pts = pts[cell_ids == cell_id]
+        if len(cell_pts) < 4:
+            continue
+
+        try:
+            hull = ConvexHull(cell_pts)
+        except Exception:
+            continue
+
+        # Use the full point set as vertices, simplices index directly into it.
+        # Fix winding: ensure each face normal points outward (aligned with
+        # the hull equation normal).
+        frag_verts = cell_pts
+        frag_faces = hull.simplices.copy()
+        for fi in range(len(frag_faces)):
+            v0, v1, v2 = cell_pts[frag_faces[fi]]
+            face_normal = np.cross(v1 - v0, v2 - v0)
+            # hull.equations[fi, :3] is the outward normal for this face
+            if np.dot(face_normal, hull.equations[fi, :3]) < 0:
+                frag_faces[fi] = frag_faces[fi][::-1]
+
+        # Fragment center
+        frag_center = np.mean(frag_verts, axis=0)
+
+        # Pull apart: displace outward from sphere center
+        gap_dir = frag_center - center
+        gap_norm = np.linalg.norm(gap_dir)
+        if gap_norm > 0:
+            gap_displacement = gap_dir / gap_norm * gap_scale * radius
+        else:
+            gap_displacement = np.zeros(3)
+
+        # Extra ejection near impact
+        dist_to_impact = np.linalg.norm(frag_center - impact_point)
+        proximity = max(0.0, 1.0 - dist_to_impact / (radius * 2))
+        proximity = proximity ** 0.5
+
+        eject_dir = frag_center - impact_point
+        eject_norm = np.linalg.norm(eject_dir)
+        if eject_norm > 0:
+            eject_dir = eject_dir / eject_norm
+        else:
+            eject_dir = rng.standard_normal(3)
+            eject_dir /= np.linalg.norm(eject_dir)
+
+        ejection = (
+            eject_dir * proximity * 0.7
+            + vel_dir * proximity * 0.3
+        ) * displacement_scale * radius
+
+        displaced_verts = frag_verts + gap_displacement + ejection
+
+        all_verts.append(displaced_verts)
+        all_faces.append(frag_faces + offset)
+        offset += len(displaced_verts)
+
+    if not all_verts:
+        return np.array([]), np.array([])
+
+    return np.vstack(all_verts), np.vstack(all_faces)
+
+
 def _compute_max_safe_scale(ic: InitialConditions, n_steps: int) -> float:
     """Find the largest body-radius scale factor that doesn't create new collisions.
 
@@ -518,7 +637,8 @@ def generate_trajectory_mesh(
     sphere_radii = [r * sphere_settings.scale_factor for r in tube_radii]
     print(f"[auto-radius] scale={safe_scale:.2f}x, tube radii: {', '.join(f'{r:.4f}' for r in tube_radii)}")
 
-    # Truncate colliding trajectories so endpoint spheres just touch
+    # Identify colliding pair (if any) and truncate so endpoint spheres just touch
+    col_a, col_b = -1, -1
     if sim_result.reason == "collision" and sphere_settings.show_end:
         end_positions = [t[-1] for t in normalized_trajectories]
         n_bodies = len(normalized_trajectories)
@@ -610,12 +730,29 @@ def generate_trajectory_mesh(
                     mesh_names.append(f"start_{i + 1}_{color_name}")
 
         if sphere_settings.show_end and len(traj_normalized) > 0:
-            sphere_verts, sphere_faces = _generate_sphere_mesh(
-                traj_normalized[-1], sphere_radii[i], sphere_settings.segments,
-            )
-            all_vertices.append(sphere_verts)
-            all_faces.append(sphere_faces)
-            mesh_names.append(f"end_{i + 1}_{color_name}")
+            if i in (col_a, col_b):
+                # Shattered sphere for colliding bodies
+                other = col_b if i == col_a else col_a
+                impact_point = (traj_normalized[-1] + normalized_trajectories[other][-1]) / 2
+                # Velocity from trajectory end direction
+                if len(traj_normalized) >= 2:
+                    vel = traj_normalized[-1] - traj_normalized[-2]
+                else:
+                    vel = np.array([1.0, 0.0, 0.0])
+                shatter_verts, shatter_faces = _generate_shatter_mesh(
+                    traj_normalized[-1], sphere_radii[i], impact_point, vel,
+                )
+                if len(shatter_verts) > 0:
+                    all_vertices.append(shatter_verts)
+                    all_faces.append(shatter_faces)
+                    mesh_names.append(f"end_{i + 1}_{color_name}")
+            else:
+                sphere_verts, sphere_faces = _generate_sphere_mesh(
+                    traj_normalized[-1], sphere_radii[i], sphere_settings.segments,
+                )
+                all_vertices.append(sphere_verts)
+                all_faces.append(sphere_faces)
+                mesh_names.append(f"end_{i + 1}_{color_name}")
 
     return all_vertices, all_faces, mesh_names
 
