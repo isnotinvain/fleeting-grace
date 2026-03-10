@@ -1,5 +1,9 @@
 import { create } from "zustand";
-import type { SimulationResult, SimulationSettings } from "./simulation/types";
+import type {
+  InitialConditions,
+  SimulationResult,
+  SimulationSettings,
+} from "./simulation/types";
 import { DEFAULT_SIMULATION_SETTINGS } from "./simulation/types";
 import type { ExportSettings } from "./mesh/types";
 import { DEFAULT_EXPORT_SETTINGS } from "./mesh/types";
@@ -14,7 +18,10 @@ interface AppState {
   // Simulation run state
   isRunning: boolean;
   progress: { done: number; total: number } | null;
+  /** Run new random simulations. */
   runSimulations: () => Promise<void>;
+  /** Replay simulations from saved initial conditions. */
+  replaySimulations: (ics: InitialConditions[]) => Promise<void>;
 
   // Simulation results
   simulations: SimulationResult[];
@@ -36,12 +43,45 @@ interface AppState {
   setExportSettings: (simIndex: number, settings: ExportSettings) => void;
 
   // Workspace persistence
+  hasSavedWorkspace: boolean;
   saveWorkspace: () => void;
-  loadWorkspace: () => boolean;
+  loadWorkspace: () => Promise<boolean>;
+  clearWorkspace: () => void;
 }
 
-/** Number of scoring functions (updated when scoring is implemented). */
+/** Number of scoring functions. */
 const NUM_METRICS = 9;
+
+const STORAGE_KEY = "fleeting-grace-workspace";
+
+function runWorker(
+  settings: SimulationSettings,
+  ics: InitialConditions[] | null,
+  onProgress: (done: number, total: number) => void,
+): Promise<SimulationResult[]> {
+  return new Promise((resolve) => {
+    const worker = new Worker(
+      new URL("./simulation/simulation.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+
+    worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
+      const msg = e.data;
+      if (msg.type === "progress") {
+        onProgress(msg.done, msg.total);
+      } else if (msg.type === "result") {
+        worker.terminate();
+        resolve(msg.simulations);
+      }
+    };
+
+    if (ics) {
+      worker.postMessage({ type: "replay", settings, initialConditions: ics });
+    } else {
+      worker.postMessage({ type: "run", settings });
+    }
+  });
+}
 
 export const useStore = create<AppState>((set, get) => ({
   // Page 1
@@ -54,38 +94,33 @@ export const useStore = create<AppState>((set, get) => ({
   // Simulation run state
   isRunning: false,
   progress: null,
-  runSimulations: () => {
-    return new Promise<void>((resolve) => {
-      const settings = get().simulationSettings;
-      set({ isRunning: true, progress: { done: 0, total: settings.numSimulations } });
 
-      const worker = new Worker(
-        new URL("./simulation/simulation.worker.ts", import.meta.url),
-        { type: "module" },
-      );
+  runSimulations: async () => {
+    const settings = get().simulationSettings;
+    set({ isRunning: true, progress: { done: 0, total: settings.numSimulations } });
 
-      worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
-        const msg = e.data;
-        if (msg.type === "progress") {
-          set({ progress: { done: msg.done, total: msg.total } });
-        } else if (msg.type === "result") {
-          // Compute per-metric scores for all simulations
-          const perMetricScores = msg.simulations.map((sim) =>
-            scoreFunctions.map((fn) => fn.score(sim)),
-          );
-          set({
-            simulations: msg.simulations,
-            perMetricScores,
-            isRunning: false,
-            progress: null,
-          });
-          worker.terminate();
-          resolve();
-        }
-      };
-
-      worker.postMessage({ type: "run", settings });
+    const simulations = await runWorker(settings, null, (done, total) => {
+      set({ progress: { done, total } });
     });
+
+    const perMetricScores = simulations.map((sim) =>
+      scoreFunctions.map((fn) => fn.score(sim)),
+    );
+    set({ simulations, perMetricScores, isRunning: false, progress: null });
+  },
+
+  replaySimulations: async (ics: InitialConditions[]) => {
+    const settings = get().simulationSettings;
+    set({ isRunning: true, progress: { done: 0, total: ics.length } });
+
+    const simulations = await runWorker(settings, ics, (done, total) => {
+      set({ progress: { done, total } });
+    });
+
+    const perMetricScores = simulations.map((sim) =>
+      scoreFunctions.map((fn) => fn.score(sim)),
+    );
+    set({ simulations, perMetricScores, isRunning: false, progress: null });
   },
 
   // Results
@@ -119,8 +154,11 @@ export const useStore = create<AppState>((set, get) => ({
     })),
 
   // Workspace
+  hasSavedWorkspace: localStorage.getItem(STORAGE_KEY) !== null,
+
   saveWorkspace: () => {
     const s = get();
+    if (s.simulations.length === 0) return;
     const workspace = {
       simulationSettings: s.simulationSettings,
       initialConditions: s.simulations.map((sim) => sim.initialConditions),
@@ -129,25 +167,33 @@ export const useStore = create<AppState>((set, get) => ({
       gridColumns: s.gridColumns,
       gridRows: s.gridRows,
     };
-    localStorage.setItem("fleeting-grace-workspace", JSON.stringify(workspace));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace));
+    set({ hasSavedWorkspace: true });
   },
-  loadWorkspace: () => {
-    const raw = localStorage.getItem("fleeting-grace-workspace");
+
+  loadWorkspace: async () => {
+    const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return false;
     try {
       const workspace = JSON.parse(raw);
       set({
         simulationSettings: workspace.simulationSettings,
-        scoringWeights: workspace.scoringWeights,
+        scoringWeights: workspace.scoringWeights ?? Array<number>(NUM_METRICS).fill(1),
         exportSettings: workspace.exportSettings ?? {},
         gridColumns: workspace.gridColumns ?? 4,
         gridRows: workspace.gridRows ?? 3,
       });
-      // TODO: Re-run simulations from workspace.initialConditions
+      if (workspace.initialConditions?.length > 0) {
+        await get().replaySimulations(workspace.initialConditions);
+      }
       return true;
     } catch {
       return false;
     }
   },
-}));
 
+  clearWorkspace: () => {
+    localStorage.removeItem(STORAGE_KEY);
+    set({ hasSavedWorkspace: false });
+  },
+}));

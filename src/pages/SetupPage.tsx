@@ -8,11 +8,26 @@ export function SetupPage() {
   const runSimulations = useStore((s) => s.runSimulations);
   const isRunning = useStore((s) => s.isRunning);
   const progress = useStore((s) => s.progress);
+  const simulations = useStore((s) => s.simulations);
+  const saveWorkspace = useStore((s) => s.saveWorkspace);
+  const loadWorkspace = useStore((s) => s.loadWorkspace);
+  const clearWorkspace = useStore((s) => s.clearWorkspace);
+  const hasSavedWorkspace = useStore((s) => s.hasSavedWorkspace);
 
   const handleRun = async () => {
     await runSimulations();
     navigate("/results");
   };
+
+  const handleLoad = async () => {
+    const loaded = await loadWorkspace();
+    if (loaded) {
+      navigate("/results");
+    }
+  };
+
+  const hasSaved = hasSavedWorkspace;
+  const hasResults = simulations.length > 0;
 
   return (
     <div className="min-h-screen bg-gray-950 text-white p-8">
@@ -84,13 +99,24 @@ export function SetupPage() {
         </div>
       </div>
 
-      <button
-        onClick={handleRun}
-        disabled={isRunning}
-        className="bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold px-6 py-3 rounded-lg transition-colors"
-      >
-        {isRunning ? "Running..." : "Run Simulations"}
-      </button>
+      <div className="flex items-center gap-4 flex-wrap">
+        <button
+          onClick={handleRun}
+          disabled={isRunning}
+          className="bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold px-6 py-3 rounded-lg transition-colors"
+        >
+          {isRunning ? "Running..." : "Run Simulations"}
+        </button>
+
+        {hasResults && !isRunning && (
+          <button
+            onClick={() => navigate("/results")}
+            className="text-cyan-400 hover:text-cyan-300 font-medium px-4 py-3 transition-colors"
+          >
+            View Results
+          </button>
+        )}
+      </div>
 
       {progress && (
         <div className="mt-4 max-w-xl">
@@ -106,6 +132,44 @@ export function SetupPage() {
           </div>
         </div>
       )}
+
+      {/* Workspace save/load */}
+      <div className="mt-12 max-w-xl border-t border-gray-800 pt-8">
+        <h2 className="text-xl font-semibold mb-4">Workspace</h2>
+        <div className="flex items-center gap-4 flex-wrap">
+          <button
+            onClick={saveWorkspace}
+            disabled={!hasResults || isRunning}
+            className="bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg border border-gray-700 transition-colors"
+          >
+            Save to Browser
+          </button>
+
+          <button
+            onClick={handleLoad}
+            disabled={!hasSaved || isRunning}
+            className="bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg border border-gray-700 transition-colors"
+          >
+            Load Saved
+          </button>
+
+          {hasSaved && (
+            <button
+              onClick={clearWorkspace}
+              className="text-gray-500 hover:text-red-400 text-sm transition-colors"
+            >
+              Clear Saved
+            </button>
+          )}
+        </div>
+        <p className="text-gray-500 text-sm mt-2">
+          {hasSaved
+            ? "A saved workspace was found. Loading will re-run simulations from saved initial conditions."
+            : hasResults
+              ? "Save your current results to pick up where you left off later."
+              : "Run simulations first, then save your workspace here."}
+        </p>
+      </div>
     </div>
   );
 }
