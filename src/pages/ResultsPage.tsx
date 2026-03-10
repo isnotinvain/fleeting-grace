@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "../store";
 import { scoreFunctions } from "../scoring/registry";
+import { SimulationScene } from "../components/SimulationScene";
 
 export function ResultsPage() {
   const navigate = useNavigate();
@@ -111,9 +112,9 @@ export function ResultsPage() {
                   key={simIdx}
                   className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden"
                 >
-                  {/* 3D scene placeholder */}
-                  <div className="aspect-square bg-gray-900 flex items-center justify-center border-b border-gray-800">
-                    <span className="text-gray-700 text-sm">3D Scene</span>
+                  {/* 3D scene */}
+                  <div className="aspect-square border-b border-gray-800">
+                    <SimulationScene trajectories={sim.trajectories} />
                   </div>
 
                   {/* Score bars */}
