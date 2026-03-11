@@ -6,12 +6,12 @@ describe("generateObj", () => {
   it("produces valid OBJ with header and mtllib reference", () => {
     const sphere = generateSphere([0, 0, 0], 1, 4);
     const obj = generateObj(
-      [{ name: "test_sphere", material: "body_1", mesh: sphere }],
+      [{ name: "test_sphere", material: "tlon", mesh: sphere }],
       "output.mtl",
     );
     expect(obj).toContain("mtllib output.mtl");
     expect(obj).toContain("o test_sphere");
-    expect(obj).toContain("usemtl body_1");
+    expect(obj).toContain("usemtl tlon");
   });
 
   it("OBJ face indices are 1-based", () => {
@@ -20,7 +20,7 @@ describe("generateObj", () => {
       faces: [[0, 1, 2]] as [number, number, number][],
     };
     const obj = generateObj(
-      [{ name: "tri", material: "body_1", mesh }],
+      [{ name: "tri", material: "tlon", mesh }],
       "test.mtl",
     );
     expect(obj).toContain("f 1 2 3");
@@ -37,8 +37,8 @@ describe("generateObj", () => {
     };
     const obj = generateObj(
       [
-        { name: "a", material: "body_1", mesh: tri1 },
-        { name: "b", material: "body_2", mesh: tri2 },
+        { name: "a", material: "tlon", mesh: tri1 },
+        { name: "b", material: "uqbar", mesh: tri2 },
       ],
       "test.mtl",
     );
@@ -51,7 +51,7 @@ describe("generateObj", () => {
   it("skips empty meshes", () => {
     const empty = { vertices: [] as [number, number, number][], faces: [] as [number, number, number][] };
     const obj = generateObj(
-      [{ name: "empty", material: "body_1", mesh: empty }],
+      [{ name: "empty", material: "tlon", mesh: empty }],
       "test.mtl",
     );
     expect(obj).not.toContain("o empty");
@@ -63,7 +63,7 @@ describe("generateObj", () => {
       faces: [] as [number, number, number][],
     };
     const obj = generateObj(
-      [{ name: "t", material: "body_1", mesh }],
+      [{ name: "t", material: "tlon", mesh }],
       "test.mtl",
     );
     expect(obj).toContain("v 1.234568 0.000000 0.000000");
@@ -73,14 +73,14 @@ describe("generateObj", () => {
 describe("generateMtl", () => {
   it("contains all 3 body materials", () => {
     const mtl = generateMtl();
-    expect(mtl).toContain("newmtl body_1");
-    expect(mtl).toContain("newmtl body_2");
-    expect(mtl).toContain("newmtl body_3");
+    expect(mtl).toContain("newmtl tlon");
+    expect(mtl).toContain("newmtl uqbar");
+    expect(mtl).toContain("newmtl orbis_tertius");
   });
 
   it("contains diffuse colors", () => {
     const mtl = generateMtl();
-    expect(mtl).toContain("Kd 1.0000 0.4200 0.4200"); // body_1 red
-    expect(mtl).toContain("Kd 0.3100 0.8000 0.7700"); // body_2 cyan
+    expect(mtl).toContain("Kd 1.0000 0.4200 0.4200"); // tlon red
+    expect(mtl).toContain("Kd 0.3100 0.8000 0.7700"); // uqbar cyan
   });
 });

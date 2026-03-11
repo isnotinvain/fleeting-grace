@@ -5,9 +5,9 @@ import * as THREE from "three";
 import type { Mesh as AppMesh } from "../mesh/tube";
 
 const MATERIAL_COLORS: Record<string, string> = {
-  body_1: "#ff6b6b",
-  body_2: "#4ecdc4",
-  body_3: "#ffe66d",
+  tlon: "#ff6b6b",
+  uqbar: "#4ecdc4",
+  orbis_tertius: "#ffe66d",
 };
 
 interface NamedMesh {

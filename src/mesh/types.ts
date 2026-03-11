@@ -1,3 +1,6 @@
+/** Body names: Tlön, Uqbar, Orbis Tertius. */
+export const BODY_NAMES = ["tlon", "uqbar", "orbis_tertius"] as const;
+
 /** Style options for the body start position marker. */
 export type StartStyle = "none" | "solid_sphere" | "armillary" | "ring";
 

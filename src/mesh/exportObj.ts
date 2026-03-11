@@ -7,9 +7,9 @@ interface NamedMesh {
 }
 
 const MATERIALS: Record<string, { kd: [number, number, number] }> = {
-  body_1: { kd: [1.0, 0.42, 0.42] },
-  body_2: { kd: [0.31, 0.8, 0.77] },
-  body_3: { kd: [1.0, 0.9, 0.43] },
+  tlon: { kd: [1.0, 0.42, 0.42] },
+  uqbar: { kd: [0.31, 0.8, 0.77] },
+  orbis_tertius: { kd: [1.0, 0.9, 0.43] },
 };
 
 /**

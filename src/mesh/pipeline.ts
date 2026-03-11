@@ -1,5 +1,6 @@
 import type { Vec3, SimulationResult } from "../simulation/types";
 import type { ExportSettings } from "./types";
+import { BODY_NAMES } from "./types";
 import type { Mesh } from "./tube";
 import { generateTube } from "./tube";
 import { generateSphere } from "./sphere";
@@ -61,8 +62,8 @@ export async function generateAllMeshes(
     const scaledTraj = scaledTrajectories[bodyIdx];
     if (scaledTraj.length < 2) continue;
 
-    const bodyNum = bodyIdx + 1;
-    const material = `body_${bodyNum}`;
+    const bodyName = BODY_NAMES[bodyIdx];
+    const material = bodyName;
 
     // Per-body radius: physical radius scaled to output space, then enlarged
     // by safeScale (the max that avoids false visual collisions)
@@ -86,7 +87,7 @@ export async function generateAllMeshes(
     // Trajectory tube
     if (trimmedTraj.length >= 2) {
       const tube = generateTube(trimmedTraj, tubeRadius, tubeRadius, settings.tubeSegments);
-      meshes.push({ name: `path_${bodyNum}`, material, mesh: tube });
+      meshes.push({ name: `path_${bodyName}`, material, mesh: tube });
     }
 
     // Start position marker
@@ -99,7 +100,7 @@ export async function generateAllMeshes(
         worldScale,
       );
       if (startMesh.vertices.length > 0) {
-        meshes.push({ name: `start_${bodyNum}`, material, mesh: startMesh });
+        meshes.push({ name: `start_${bodyName}`, material, mesh: startMesh });
       }
     }
 
@@ -131,7 +132,7 @@ export async function generateAllMeshes(
           normalize(pathDir), postHalfWidth,
           ringNormal, postThickness / 2,
         );
-        meshes.push({ name: `post_${bodyNum}`, material, mesh: post });
+        meshes.push({ name: `post_${bodyName}`, material, mesh: post });
 
         // Arrow: centered at top of post
         const arrowLen = markerRadius * 3;
@@ -152,7 +153,7 @@ export async function generateAllMeshes(
           sw, tipLen, tipW, tipNotch,
           tailLen, tailW, tailNotch, thick,
         );
-        meshes.push({ name: `arrow_${bodyNum}`, material, mesh: arrow });
+        meshes.push({ name: `arrow_${bodyName}`, material, mesh: arrow });
       }
     }
 
@@ -161,7 +162,7 @@ export async function generateAllMeshes(
       const endPos = scaledTraj[scaledTraj.length - 1];
       const endRadius = endSphereRadii[bodyIdx];
       const sphere = generateSphere(endPos, endRadius, settings.end.segments);
-      meshes.push({ name: `end_${bodyNum}`, material, mesh: sphere });
+      meshes.push({ name: `end_${bodyName}`, material, mesh: sphere });
     }
   }
 
@@ -452,11 +453,11 @@ function generateCollisionShatter(
 
     const isA = j < nA;
     const bodyIdx = isA ? colA : colB;
-    const material = `body_${bodyIdx + 1}`;
+    const material = BODY_NAMES[bodyIdx];
     const sphereCenter = isA ? endA : endB;
 
     // Fragment mesh
-    meshes.push({ name: `end_${bodyIdx + 1}`, material, mesh: fragMesh });
+    meshes.push({ name: `end_${BODY_NAMES[bodyIdx]}`, material, mesh: fragMesh });
 
     // Support strut: ray from sphere center toward fragment centroid
     const fragCentroid: Vec3 = [0, 0, 0];
@@ -476,7 +477,7 @@ function generateCollisionShatter(
       const hitPt = rayMeshIntersect(sphereCenter, rayDirN, fragMesh, rayLen) ?? fragCentroid;
       const strut = generateTube([sphereCenter, hitPt], strutRadius, strutRadius, 8);
       if (strut.vertices.length > 0) {
-        meshes.push({ name: `strut_${bodyIdx + 1}`, material, mesh: strut });
+        meshes.push({ name: `strut_${BODY_NAMES[bodyIdx]}`, material, mesh: strut });
       }
     }
   }

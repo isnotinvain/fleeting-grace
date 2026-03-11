@@ -40,7 +40,7 @@ describe("generateAllMeshes", () => {
     const meshes = await generateAllMeshes(makeResult(), DEFAULT_EXPORT_SETTINGS);
     for (const m of meshes) {
       expect(m.name).toBeTruthy();
-      expect(m.material).toMatch(/^body_[123]$/);
+      expect(m.material).toMatch(/^(tlon|uqbar|orbis_tertius)$/);
     }
   });
 
