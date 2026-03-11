@@ -5,12 +5,11 @@ import { generateTube } from "./tube";
 import { generateSphere } from "./sphere";
 import { generateArrow } from "./arrow";
 import { generateArmillary } from "./armillary";
-import { combineMeshes } from "./arrow";
-import { bodyRadius, AU } from "../simulation/config";
-import { add, sub, scale, length, normalize } from "../utils/vec3";
-import { generateShatterFragments, simulateShatterPhysics, rayMeshIntersect } from "./shatter";
+import { bodyRadius } from "../simulation/config";
+import { sub, scale, length, normalize } from "../utils/vec3";
+import { generateShatterFragments, initRapier, simulateShatterPhysics, rayMeshIntersect } from "./shatter";
 
-interface NamedMesh {
+export interface NamedMesh {
   name: string;
   material: string;
   mesh: Mesh;
@@ -20,10 +19,10 @@ interface NamedMesh {
  * Generate all meshes for a simulation result, scaled to fit within
  * the configured output size (bounding sphere in inches).
  */
-export function generateAllMeshes(
+export async function generateAllMeshes(
   result: SimulationResult,
   settings: ExportSettings,
-): NamedMesh[] {
+): Promise<NamedMesh[]> {
   const meshes: NamedMesh[] = [];
   const trajectories = result.trajectories;
   const ic = result.initialConditions;
@@ -133,6 +132,7 @@ export function generateAllMeshes(
 
   // Exploding sphere: shatter fragments for colliding bodies
   if (settings.end.style === "exploding" && result.reason === "collision") {
+    await initRapier();
     // Use the smallest body radius for strut thickness
     const minTubeRadius = Math.min(
       ...ic.masses.map((m) => bodyRadius(m) * worldScale * safeScale),
@@ -354,25 +354,10 @@ function generateCollisionShatter(
   const endA = trajA[trajA.length - 1];
   const endB = trajB[trajB.length - 1];
 
-  // Impact direction: from each body toward the midpoint
-  const impactPoint: Vec3 = [
-    (endA[0] + endB[0]) / 2,
-    (endA[1] + endB[1]) / 2,
-    (endA[2] + endB[2]) / 2,
-  ];
-  const impactDirA = normalize(sub(impactPoint, endA));
-  const impactDirB = normalize(sub(impactPoint, endB));
-
   const radiusA = endSphereRadii[colA];
   const radiusB = endSphereRadii[colB];
 
-  const fragCount = settings.end.fragmentCount;
-  const nBack = Math.max(1, Math.floor(fragCount * 0.3));
-
-  const fragmentsA = generateShatterFragments(endA, radiusA, impactDirA, fragCount, nBack, colA * 1000 + 42);
-  const fragmentsB = generateShatterFragments(endB, radiusB, impactDirB, fragCount, nBack, colB * 1000 + 99);
-
-  // Compute velocities from last two trajectory points
+  // Compute velocity vectors at collision from last two trajectory points
   const velA = trajA.length >= 2
     ? sub(trajA[trajA.length - 1], trajA[trajA.length - 2])
     : [1, 0, 0] as Vec3;
@@ -380,13 +365,34 @@ function generateCollisionShatter(
     ? sub(trajB[trajB.length - 1], trajB[trajB.length - 2])
     : [-1, 0, 0] as Vec3;
 
+  // Back up each sphere along its velocity vector so they start just touching.
+  // The collision velocity determines the approach angle, not the curved path.
+  const velDirA = length(velA) > 1e-10 ? normalize(velA) : [1, 0, 0] as Vec3;
+  const velDirB = length(velB) > 1e-10 ? normalize(velB) : [-1, 0, 0] as Vec3;
+
+  // Move each body backward along its velocity by its own radius + a small gap
+  const gap = Math.min(radiusA, radiusB) * 0.1;
+  const spawnA: Vec3 = sub(endA, scale(velDirA, radiusA + gap));
+  const spawnB: Vec3 = sub(endB, scale(velDirB, radiusB + gap));
+
+  // Impact direction: from each spawn toward the other
+  const impactDirA = normalize(sub(spawnB, spawnA));
+  const impactDirB = normalize(sub(spawnA, spawnB));
+
+  const fragCount = settings.end.fragmentCount;
+  const nBack = Math.max(1, Math.floor(fragCount * 0.3));
+
+  // Generate fragments at the backed-up spawn positions
+  const fragmentsA = generateShatterFragments(spawnA, radiusA, impactDirA, fragCount, nBack, colA * 1000 + 42);
+  const fragmentsB = generateShatterFragments(spawnB, radiusB, impactDirB, fragCount, nBack, colB * 1000 + 99);
+
   // Scale velocities for good visual spread
   const speed = Math.max(length(velA), length(velB), 1e-6);
   const velScale = Math.max(radiusA, radiusB) * 3.0 / speed;
   const scaledVelA = scale(velA, velScale);
   const scaledVelB = scale(velB, velScale);
 
-  // Simulate physics
+  // Simulate rigid body physics with Rapier (inter-fragment collisions)
   const simResults = simulateShatterPhysics(
     fragmentsA,
     fragmentsB,

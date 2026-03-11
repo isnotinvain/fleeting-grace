@@ -2,11 +2,24 @@ import type { Vec3 } from "../simulation/types";
 import type { Mesh } from "./tube";
 import { add, sub, scale, dot, cross, normalize, length } from "../utils/vec3";
 import quickhull3d from "quickhull3d";
+import RAPIER from "@dimforge/rapier3d-compat";
 
 /** A single fragment: its convex hull mesh and centroid. */
 export interface Fragment {
   mesh: Mesh;
   centroid: Vec3;
+}
+
+let rapierInitialized = false;
+
+/**
+ * Initialize the Rapier WASM module. Must be called before simulateShatterPhysics.
+ * Safe to call multiple times — subsequent calls are no-ops.
+ */
+export async function initRapier(): Promise<void> {
+  if (rapierInitialized) return;
+  await RAPIER.init();
+  rapierInitialized = true;
 }
 
 /**
@@ -23,9 +36,8 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-/** Generate a random unit vector using Box-Muller on a seeded PRNG. */
+/** Generate a random unit vector using Marsaglia rejection on a seeded PRNG. */
 function randomUnitVector(rand: () => number): Vec3 {
-  // Marsaglia method: sample in unit cube, reject outside sphere
   let x: number, y: number, z: number, lenSq: number;
   do {
     x = rand() * 2 - 1;
@@ -209,22 +221,41 @@ export function generateShatterFragments(
 }
 
 /**
- * Apply a simple explosion physics simulation to shatter fragments.
+ * Apply a quaternion rotation to a vector.
+ * q = [x, y, z, w] (Rapier convention)
+ */
+function applyQuaternion(v: Vec3, q: { x: number; y: number; z: number; w: number }): Vec3 {
+  const { x: qx, y: qy, z: qz, w: qw } = q;
+  // v' = q * v * q^-1, expanded:
+  const ix = qw * v[0] + qy * v[2] - qz * v[1];
+  const iy = qw * v[1] + qz * v[0] - qx * v[2];
+  const iz = qw * v[2] + qx * v[1] - qy * v[0];
+  const iw = -qx * v[0] - qy * v[1] - qz * v[2];
+  return [
+    ix * qw + iw * -qx + iy * -qz - iz * -qy,
+    iy * qw + iw * -qy + iz * -qx - ix * -qz,
+    iz * qw + iw * -qz + ix * -qy - iy * -qx,
+  ];
+}
+
+/**
+ * Run rigid body physics on shatter fragments using Rapier.
  *
- * Instead of a full rigid body simulation (which would require Rapier WASM loading),
- * we use a deterministic ballistic model: each fragment gets an initial velocity
- * based on its position relative to the impact point, plus a small random spin.
- * Fragments translate and rotate over the given number of steps.
+ * Creates a Rapier world with zero gravity, adds each fragment as a dynamic
+ * rigid body with a convex hull collider, sets initial velocities from the
+ * 3-body simulation, and steps the physics forward. Inter-fragment collisions
+ * are fully simulated.
  *
- * This produces a visually convincing explosion without the complexity of
- * loading a WASM physics engine synchronously.
+ * The two sets of fragments are backed up along their respective velocity
+ * vectors so they start just touching (not overlapping), then launched
+ * forward with their collision velocities.
  *
- * @param fragmentsA - Fragments from body A
- * @param fragmentsB - Fragments from body B
- * @param velA - Body A's velocity at collision (scaled)
- * @param velB - Body B's velocity at collision (scaled)
- * @param simSteps - Number of simulation steps
- * @returns Array of displaced fragment meshes
+ * @param fragmentsA - Fragments from body A (centered at body A's collision position)
+ * @param fragmentsB - Fragments from body B (centered at body B's collision position)
+ * @param velA - Body A's velocity at collision (scaled for visual spread)
+ * @param velB - Body B's velocity at collision (scaled for visual spread)
+ * @param simSteps - Number of physics steps to simulate
+ * @returns Array of displaced fragment meshes (A fragments first, then B)
  */
 export function simulateShatterPhysics(
   fragmentsA: Fragment[],
@@ -237,61 +268,83 @@ export function simulateShatterPhysics(
   if (allFragments.length === 0) return [];
 
   const nA = fragmentsA.length;
-  const results: Mesh[] = [];
-  const rand = mulberry32(12345);
+
+  // Create Rapier world with zero gravity (space)
+  const gravity = new RAPIER.Vector3(0, 0, 0);
+  const world = new RAPIER.World(gravity);
+
+  // Track rigid body handles so we can read transforms back
+  const bodyHandles: RAPIER.RigidBodyHandle[] = [];
 
   for (let i = 0; i < allFragments.length; i++) {
     const frag = allFragments[i];
-    const bodyVel = i < nA ? velA : velB;
+    const { mesh, centroid } = frag;
+    const vel = i < nA ? velA : velB;
+
+    // Center vertices on centroid for the collider shape
+    const centeredVerts = new Float32Array(mesh.vertices.length * 3);
+    for (let j = 0; j < mesh.vertices.length; j++) {
+      centeredVerts[j * 3 + 0] = mesh.vertices[j][0] - centroid[0];
+      centeredVerts[j * 3 + 1] = mesh.vertices[j][1] - centroid[1];
+      centeredVerts[j * 3 + 2] = mesh.vertices[j][2] - centroid[2];
+    }
+
+    // Create convex hull collider descriptor
+    const colliderDesc = RAPIER.ColliderDesc.convexHull(centeredVerts);
+    if (!colliderDesc) continue; // degenerate hull
+
+    colliderDesc.setMass(1.0);
+    colliderDesc.setRestitution(0.3);
+
+    // Create dynamic rigid body at the fragment's centroid position
+    const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(centroid[0], centroid[1], centroid[2])
+      .setLinvel(vel[0], vel[1], vel[2]);
+
+    const body = world.createRigidBody(bodyDesc);
+    world.createCollider(colliderDesc, body);
+    bodyHandles.push(body.handle);
+  }
+
+  // Step physics
+  for (let step = 0; step < simSteps; step++) {
+    world.step();
+  }
+
+  // Read back transforms and apply to original vertices
+  const results: Mesh[] = [];
+  let handleIdx = 0;
+
+  for (let i = 0; i < allFragments.length; i++) {
+    const frag = allFragments[i];
     const { mesh, centroid } = frag;
 
-    // Fragment velocity = body velocity + radial explosion velocity
-    // The radial component pushes fragments outward from the centroid
-    const radial = sub(centroid, i < nA ? fragmentsA[0].centroid : fragmentsB[0].centroid);
-    const radialLen = length(radial);
-    const radialDir = radialLen > 1e-10 ? scale(radial, 1 / radialLen) : randomUnitVector(rand);
+    // Some fragments may have been skipped (degenerate hull)
+    if (handleIdx >= bodyHandles.length) {
+      results.push({ vertices: [...mesh.vertices], faces: mesh.faces });
+      continue;
+    }
 
-    // Explosion speed proportional to body velocity magnitude
-    const bodySpeed = length(bodyVel);
-    const explosionSpeed = bodySpeed * (0.3 + rand() * 0.7);
-    const fragVel = add(bodyVel, scale(radialDir, explosionSpeed));
+    const body = world.getRigidBody(bodyHandles[handleIdx]);
+    handleIdx++;
 
-    // Random rotation axis and speed
-    const rotAxis = normalize(randomUnitVector(rand));
-    const rotSpeed = (rand() - 0.5) * 0.1; // radians per step
+    const pos = body.translation();
+    const rot = body.rotation();
 
-    // Simulate: translate + rotate
-    const totalAngle = rotSpeed * simSteps;
-    const displacement = scale(fragVel, simSteps * 0.016); // ~60fps timestep
-
-    // Apply rotation (Rodrigues' formula) and translation
-    const cosA = Math.cos(totalAngle);
-    const sinA = Math.sin(totalAngle);
-
+    // Transform vertices: rotate (v - centroid), then translate to new position
     const newVertices = mesh.vertices.map((v) => {
-      // Center on centroid, rotate, uncenter, then displace
-      const centered = sub(v, centroid);
-      const rotated = rodriguesRotate(centered, rotAxis, cosA, sinA);
-      return add(add(rotated, centroid), displacement);
+      const centered: Vec3 = [v[0] - centroid[0], v[1] - centroid[1], v[2] - centroid[2]];
+      const rotated = applyQuaternion(centered, rot);
+      return [rotated[0] + pos.x, rotated[1] + pos.y, rotated[2] + pos.z] as Vec3;
     });
 
     results.push({ vertices: newVertices, faces: mesh.faces });
   }
 
-  return results;
-}
+  // Free Rapier resources
+  world.free();
 
-/**
- * Rodrigues' rotation formula: rotate vector v around axis k by angle.
- */
-function rodriguesRotate(v: Vec3, k: Vec3, cosA: number, sinA: number): Vec3 {
-  const kCrossV = cross(k, v);
-  const kDotV = dot(k, v);
-  return [
-    v[0] * cosA + kCrossV[0] * sinA + k[0] * kDotV * (1 - cosA),
-    v[1] * cosA + kCrossV[1] * sinA + k[1] * kDotV * (1 - cosA),
-    v[2] * cosA + kCrossV[2] * sinA + k[2] * kDotV * (1 - cosA),
-  ];
+  return results;
 }
 
 /**

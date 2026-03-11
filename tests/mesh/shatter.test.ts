@@ -1,11 +1,16 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import {
   generateShatterFragments,
+  initRapier,
   simulateShatterPhysics,
   rayTriangleIntersect,
   rayMeshIntersect,
 } from "../../src/mesh/shatter";
 import type { Vec3 } from "../../src/simulation/types";
+
+beforeAll(async () => {
+  await initRapier();
+});
 
 describe("generateShatterFragments", () => {
   it("produces the requested number of fragments (approximately)", () => {

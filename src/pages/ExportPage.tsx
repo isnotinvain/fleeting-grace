@@ -1,8 +1,9 @@
-import { useMemo, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useStore } from "../store";
 import { MeshScene } from "../components/MeshScene";
 import { generateAllMeshes } from "../mesh/pipeline";
+import type { NamedMesh } from "../mesh/pipeline";
 import { generateObj, generateMtl, downloadFile } from "../mesh/exportObj";
 import type { ExportSettings, StartStyle, EndStyle } from "../mesh/types";
 
@@ -27,9 +28,20 @@ export function ExportPage() {
     [simIndex, settings, setExportSettings],
   );
 
-  const meshes = useMemo(() => {
-    if (!sim) return [];
-    return generateAllMeshes(sim, settings);
+  const [meshes, setMeshes] = useState<NamedMesh[]>([]);
+  const [generating, setGenerating] = useState(false);
+  const genIdRef = useRef(0);
+
+  useEffect(() => {
+    if (!sim) return;
+    const id = ++genIdRef.current;
+    setGenerating(true);
+    generateAllMeshes(sim, settings).then((result) => {
+      if (id === genIdRef.current) {
+        setMeshes(result);
+        setGenerating(false);
+      }
+    });
   }, [sim, settings]);
 
   const handleDownload = useCallback(() => {

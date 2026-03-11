@@ -30,22 +30,22 @@ function makeResult(): SimulationResult {
 }
 
 describe("generateAllMeshes", () => {
-  it("produces meshes for each body", () => {
-    const meshes = generateAllMeshes(makeResult(), DEFAULT_EXPORT_SETTINGS);
+  it("produces meshes for each body", async () => {
+    const meshes = await generateAllMeshes(makeResult(), DEFAULT_EXPORT_SETTINGS);
     // Should have path, start marker, arrow, and end marker for each of 3 bodies
     expect(meshes.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("all meshes have valid names and materials", () => {
-    const meshes = generateAllMeshes(makeResult(), DEFAULT_EXPORT_SETTINGS);
+  it("all meshes have valid names and materials", async () => {
+    const meshes = await generateAllMeshes(makeResult(), DEFAULT_EXPORT_SETTINGS);
     for (const m of meshes) {
       expect(m.name).toBeTruthy();
       expect(m.material).toMatch(/^body_[123]$/);
     }
   });
 
-  it("all face indices are valid within each mesh", () => {
-    const meshes = generateAllMeshes(makeResult(), DEFAULT_EXPORT_SETTINGS);
+  it("all face indices are valid within each mesh", async () => {
+    const meshes = await generateAllMeshes(makeResult(), DEFAULT_EXPORT_SETTINGS);
     for (const { mesh } of meshes) {
       const maxIdx = mesh.vertices.length - 1;
       for (const face of mesh.faces) {
@@ -57,33 +57,33 @@ describe("generateAllMeshes", () => {
     }
   });
 
-  it("respects start style = none", () => {
+  it("respects start style = none", async () => {
     const settings = {
       ...DEFAULT_EXPORT_SETTINGS,
       start: { ...DEFAULT_EXPORT_SETTINGS.start, style: "none" as const, showVelocityArrow: false },
     };
-    const meshes = generateAllMeshes(makeResult(), settings);
+    const meshes = await generateAllMeshes(makeResult(), settings);
     const startMeshes = meshes.filter((m) => m.name.startsWith("start_"));
     expect(startMeshes).toHaveLength(0);
   });
 
-  it("respects end style = none", () => {
+  it("respects end style = none", async () => {
     const settings = {
       ...DEFAULT_EXPORT_SETTINGS,
       end: { ...DEFAULT_EXPORT_SETTINGS.end, style: "none" as const },
     };
-    const meshes = generateAllMeshes(makeResult(), settings);
+    const meshes = await generateAllMeshes(makeResult(), settings);
     const endMeshes = meshes.filter((m) => m.name.startsWith("end_"));
     expect(endMeshes).toHaveLength(0);
   });
 
-  it("includes velocity arrows when enabled", () => {
-    const meshes = generateAllMeshes(makeResult(), DEFAULT_EXPORT_SETTINGS);
+  it("includes velocity arrows when enabled", async () => {
+    const meshes = await generateAllMeshes(makeResult(), DEFAULT_EXPORT_SETTINGS);
     const arrows = meshes.filter((m) => m.name.startsWith("arrow_"));
     expect(arrows.length).toBeGreaterThan(0);
   });
 
-  it("generates exploding fragments for collision results", () => {
+  it("generates exploding fragments for collision results", async () => {
     const result = makeResult();
     // Make bodies 1 and 2 end at the same spot (collision)
     const collisionResult: SimulationResult = {
@@ -100,7 +100,7 @@ describe("generateAllMeshes", () => {
       ...DEFAULT_EXPORT_SETTINGS,
       end: { ...DEFAULT_EXPORT_SETTINGS.end, style: "exploding" as const, fragmentCount: 6, physicsSteps: 20 },
     };
-    const meshes = generateAllMeshes(collisionResult, settings);
+    const meshes = await generateAllMeshes(collisionResult, settings);
     const endMeshes = meshes.filter((m) => m.name.startsWith("end_"));
     const strutMeshes = meshes.filter((m) => m.name.startsWith("strut_"));
     // Should have fragment meshes for both colliding bodies
@@ -119,12 +119,12 @@ describe("generateAllMeshes", () => {
     }
   });
 
-  it("exploding style is ignored for non-collision results", () => {
+  it("exploding style is ignored for non-collision results", async () => {
     const settings = {
       ...DEFAULT_EXPORT_SETTINGS,
       end: { ...DEFAULT_EXPORT_SETTINGS.end, style: "exploding" as const },
     };
-    const meshes = generateAllMeshes(makeResult(), settings); // reason = "max_steps"
+    const meshes = await generateAllMeshes(makeResult(), settings); // reason = "max_steps"
     const endMeshes = meshes.filter((m) => m.name.startsWith("end_"));
     expect(endMeshes).toHaveLength(0);
   });
