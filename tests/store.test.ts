@@ -23,8 +23,8 @@ describe("base64 initial conditions", () => {
 
     for (let b = 0; b < 3; b++) {
       for (let d = 0; d < 3; d++) {
-        expect(decoded.positions[b][d]).toBe(ic.positions[b][d]);
-        expect(decoded.velocities[b][d]).toBe(ic.velocities[b][d]);
+        expect(decoded.positions[b]![d]).toBe(ic.positions[b]![d]);
+        expect(decoded.velocities[b]![d]).toBe(ic.velocities[b]![d]);
       }
       expect(decoded.masses[b]).toBe(ic.masses[b]);
     }
@@ -35,7 +35,7 @@ describe("base64 initial conditions", () => {
     const bytes = new Uint8Array(data.buffer);
     let binary = "";
     for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
+      binary += String.fromCharCode(bytes[i]!);
     }
     const encoded = btoa(binary);
     expect(() => decodeInitialConditions(encoded)).toThrow("Expected 21");

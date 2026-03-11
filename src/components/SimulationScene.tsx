@@ -16,18 +16,21 @@ function TrajectoryLine({ points, color }: { points: Vec3[]; color: string }) {
   const geometry = useMemo(() => {
     const positions = new Float32Array(points.length * 3);
     for (let i = 0; i < points.length; i++) {
-      positions[i * 3] = points[i][0];
-      positions[i * 3 + 1] = points[i][1];
-      positions[i * 3 + 2] = points[i][2];
+      positions[i * 3] = points[i]![0];
+      positions[i * 3 + 1] = points[i]![1];
+      positions[i * 3 + 2] = points[i]![2];
     }
     const geom = new THREE.BufferGeometry();
     geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     return geom;
   }, [points]);
 
-  return <line geometry={geometry}>
-    <lineBasicMaterial color={color} />
-  </line>;
+  return (
+    // @ts-expect-error R3F extends 'line' for Three.js Line, conflicts with SVG typings
+    <line geometry={geometry}>
+      <lineBasicMaterial color={color} />
+    </line>
+  );
 }
 
 function EndpointSphere({ position, color }: { position: Vec3; color: string }) {
@@ -56,12 +59,12 @@ export function SimulationScene({ trajectories }: SimulationSceneProps) {
 
       {normalized.map((traj, i) => {
         if (traj.length < 2) return null;
-        const color = BODY_COLORS[i % BODY_COLORS.length];
+        const color = BODY_COLORS[i % BODY_COLORS.length]!;
         return (
           <group key={i}>
             <TrajectoryLine points={traj} color={color} />
-            <EndpointSphere position={traj[0]} color={color} />
-            <EndpointSphere position={traj[traj.length - 1]} color={color} />
+            <EndpointSphere position={traj[0]!} color={color} />
+            <EndpointSphere position={traj[traj.length - 1]!} color={color} />
           </group>
         );
       })}

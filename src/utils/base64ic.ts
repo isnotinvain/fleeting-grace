@@ -17,16 +17,16 @@ export function decodeInitialConditions(base64Str: string): InitialConditions {
   }
   return {
     positions: [
-      [data[0], data[1], data[2]],
-      [data[3], data[4], data[5]],
-      [data[6], data[7], data[8]],
+      [data[0]!, data[1]!, data[2]!],
+      [data[3]!, data[4]!, data[5]!],
+      [data[6]!, data[7]!, data[8]!],
     ],
     velocities: [
-      [data[9], data[10], data[11]],
-      [data[12], data[13], data[14]],
-      [data[15], data[16], data[17]],
+      [data[9]!, data[10]!, data[11]!],
+      [data[12]!, data[13]!, data[14]!],
+      [data[15]!, data[16]!, data[17]!],
     ],
-    masses: [data[18], data[19], data[20]],
+    masses: [data[18]!, data[19]!, data[20]!],
   };
 }
 
@@ -37,15 +37,15 @@ export function encodeInitialConditions(ic: InitialConditions): string {
   const data = new Float64Array(21);
   for (let b = 0; b < 3; b++) {
     for (let d = 0; d < 3; d++) {
-      data[b * 3 + d] = ic.positions[b][d];
-      data[9 + b * 3 + d] = ic.velocities[b][d];
+      data[b * 3 + d] = ic.positions[b]![d]!;
+      data[9 + b * 3 + d] = ic.velocities[b]![d]!;
     }
-    data[18 + b] = ic.masses[b];
+    data[18 + b] = ic.masses[b]!;
   }
   const bytes = new Uint8Array(data.buffer);
   let binary = "";
   for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
+    binary += String.fromCharCode(bytes[i]!);
   }
   return btoa(binary);
 }

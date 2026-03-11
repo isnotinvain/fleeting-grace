@@ -21,7 +21,7 @@ function makeResult(): SimulationResult {
     reason: "max_steps",
     steps: 10000,
     initialConditions: {
-      positions: [traj1[0], traj2[0], traj3[0]],
+      positions: [traj1[0]!, traj2[0]!, traj3[0]!],
       velocities: [[0, 20000, 0], [-15000, 0, 0], [0, 0, 10000]],
       masses: [SOLAR_MASS, 0.5 * SOLAR_MASS, 2 * SOLAR_MASS],
     },
@@ -90,10 +90,10 @@ describe("generateAllMeshes", () => {
       ...result,
       reason: "collision",
       trajectories: [
-        result.trajectories[0],
+        result.trajectories[0]!,
         // Body 2 ends near body 1's endpoint
-        [...result.trajectories[1].slice(0, -1), result.trajectories[0][result.trajectories[0].length - 1]],
-        result.trajectories[2],
+        [...result.trajectories[1]!.slice(0, -1), result.trajectories[0]![result.trajectories[0]!.length - 1]!],
+        result.trajectories[2]!,
       ],
     };
     const settings = {

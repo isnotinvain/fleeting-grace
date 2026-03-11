@@ -8,7 +8,7 @@ import { generateFlatArrow } from "./flatArrow";
 import { generateFlatBar } from "./flatBar";
 import { generateArmillary, generateSingleRing, computeRingNormal } from "./armillary";
 import { bodyRadius } from "../simulation/config";
-import { sub, scale, add, length, normalize, cross, dot, addScaled } from "../utils/vec3";
+import { sub, scale, length, normalize, cross, dot, addScaled } from "../utils/vec3";
 import { generateShatterFragments, initRapier, simulateShatterPhysics, rayMeshIntersect } from "./shatter";
 
 export interface NamedMesh {
@@ -51,28 +51,28 @@ export async function generateAllMeshes(
   if (result.reason === "collision" && settings.end.style !== "none") {
     const [colA, colB] = findCollidingPair(scaledTrajectories);
     truncateAtCollision(
-      scaledTrajectories[colA],
-      scaledTrajectories[colB],
-      endSphereRadii[colA],
-      endSphereRadii[colB],
+      scaledTrajectories[colA]!,
+      scaledTrajectories[colB]!,
+      endSphereRadii[colA]!,
+      endSphereRadii[colB]!,
     );
   }
 
   for (let bodyIdx = 0; bodyIdx < scaledTrajectories.length; bodyIdx++) {
-    const scaledTraj = scaledTrajectories[bodyIdx];
+    const scaledTraj = scaledTrajectories[bodyIdx]!;
     if (scaledTraj.length < 2) continue;
 
-    const bodyName = BODY_NAMES[bodyIdx];
+    const bodyName = BODY_NAMES[bodyIdx]!;
     const material = bodyName;
 
     // Per-body radius: physical radius scaled to output space, then enlarged
     // by safeScale (the max that avoids false visual collisions)
-    const massKg = ic.masses[bodyIdx];
+    const massKg = ic.masses[bodyIdx]!;
     const tubeRadius = bodyRadius(massKg) * worldScale * safeScale;
     // Markers use a user-configurable multiplier on top of the tube radius
     const markerRadius = tubeRadius * settings.start.scaleFactor;
 
-    const startPos = scaledTraj[0];
+    const startPos = scaledTraj[0]!;
 
     // Truncate the beginning of the trajectory at the marker sphere edge
     const trimmedTraj = settings.start.style !== "none"
@@ -81,8 +81,8 @@ export async function generateAllMeshes(
 
     // Direction from start toward the first point of the truncated path
     const pathDir = trimmedTraj.length >= 2
-      ? sub(trimmedTraj[1], startPos)
-      : sub(scaledTraj[Math.min(1, scaledTraj.length - 1)], startPos);
+      ? sub(trimmedTraj[1]!, startPos)
+      : sub(scaledTraj[Math.min(1, scaledTraj.length - 1)]!, startPos);
 
     // Trajectory tube
     if (trimmedTraj.length >= 2) {
@@ -106,7 +106,7 @@ export async function generateAllMeshes(
 
     // Velocity weathervane (post + flat arrow)
     if (settings.start.showVelocityArrow) {
-      const vel = ic.velocities[bodyIdx];
+      const vel = ic.velocities[bodyIdx]!;
       const velLen = length(vel);
       if (velLen > 1e-10) {
         // Ring normal and "up" direction within the ring plane
@@ -159,8 +159,8 @@ export async function generateAllMeshes(
 
     // End position marker (solid sphere only; exploding handled below)
     if (settings.end.style === "solid_sphere") {
-      const endPos = scaledTraj[scaledTraj.length - 1];
-      const endRadius = endSphereRadii[bodyIdx];
+      const endPos = scaledTraj[scaledTraj.length - 1]!;
+      const endRadius = endSphereRadii[bodyIdx]!;
       const sphere = generateSphere(endPos, endRadius, settings.end.segments);
       meshes.push({ name: `end_${bodyName}`, material, mesh: sphere });
     }
@@ -258,7 +258,7 @@ function truncateAtSphere(path: Vec3[], center: Vec3, radius: number): Vec3[] {
   // Find the first point outside the sphere
   let firstOutside = -1;
   for (let i = 1; i < path.length; i++) {
-    if (length(sub(path[i], center)) > radius) {
+    if (length(sub(path[i]!, center)) > radius) {
       firstOutside = i;
       break;
     }
@@ -266,8 +266,8 @@ function truncateAtSphere(path: Vec3[], center: Vec3, radius: number): Vec3[] {
   if (firstOutside < 0) return path; // all inside or trivial
 
   // Interpolate between the last inside point and the first outside point
-  const inside = path[firstOutside - 1];
-  const outside = path[firstOutside];
+  const inside = path[firstOutside - 1]!;
+  const outside = path[firstOutside]!;
   const dir = sub(outside, inside);
   const segLen = length(dir);
   if (segLen < 1e-10) return path.slice(firstOutside);
@@ -310,18 +310,18 @@ function truncateAtCollision(
   const sumRadii = radiusA + radiusB;
 
   // Check if they even overlap at the end
-  const endDist = length(sub(trajA[trajA.length - 1], trajB[trajB.length - 1]));
+  const endDist = length(sub(trajA[trajA.length - 1]!, trajB[trajB.length - 1]!));
   if (endDist >= sumRadii) return;
 
   function interp(traj: Vec3[], t: number): Vec3 {
     const idx = t * (traj.length - 1);
     const i = Math.floor(idx);
-    if (i >= traj.length - 1) return traj[traj.length - 1];
+    if (i >= traj.length - 1) return traj[traj.length - 1]!;
     const frac = idx - i;
     return [
-      traj[i][0] * (1 - frac) + traj[i + 1][0] * frac,
-      traj[i][1] * (1 - frac) + traj[i + 1][1] * frac,
-      traj[i][2] * (1 - frac) + traj[i + 1][2] * frac,
+      traj[i]![0] * (1 - frac) + traj[i + 1]![0] * frac,
+      traj[i]![1] * (1 - frac) + traj[i + 1]![1] * frac,
+      traj[i]![2] * (1 - frac) + traj[i + 1]![2] * frac,
     ];
   }
 
@@ -362,8 +362,8 @@ function findCollidingPair(trajectories: Vec3[][]): [number, number] {
   let bestPair: [number, number] = [0, 1];
   for (let i = 0; i < trajectories.length; i++) {
     for (let j = i + 1; j < trajectories.length; j++) {
-      const endI = trajectories[i][trajectories[i].length - 1];
-      const endJ = trajectories[j][trajectories[j].length - 1];
+      const endI = trajectories[i]![trajectories[i]!.length - 1]!;
+      const endJ = trajectories[j]![trajectories[j]!.length - 1]!;
       const dist = length(sub(endI, endJ));
       if (dist < bestDist) {
         bestDist = dist;
@@ -387,20 +387,20 @@ function generateCollisionShatter(
   const meshes: NamedMesh[] = [];
   const [colA, colB] = findCollidingPair(scaledTrajectories);
 
-  const trajA = scaledTrajectories[colA];
-  const trajB = scaledTrajectories[colB];
-  const endA = trajA[trajA.length - 1];
-  const endB = trajB[trajB.length - 1];
+  const trajA = scaledTrajectories[colA]!;
+  const trajB = scaledTrajectories[colB]!;
+  const endA = trajA[trajA.length - 1]!;
+  const endB = trajB[trajB.length - 1]!;
 
-  const radiusA = endSphereRadii[colA];
-  const radiusB = endSphereRadii[colB];
+  const radiusA = endSphereRadii[colA]!;
+  const radiusB = endSphereRadii[colB]!;
 
   // Compute velocity vectors at collision from last two trajectory points
   const velA = trajA.length >= 2
-    ? sub(trajA[trajA.length - 1], trajA[trajA.length - 2])
+    ? sub(trajA[trajA.length - 1]!, trajA[trajA.length - 2]!)
     : [1, 0, 0] as Vec3;
   const velB = trajB.length >= 2
-    ? sub(trajB[trajB.length - 1], trajB[trajB.length - 2])
+    ? sub(trajB[trajB.length - 1]!, trajB[trajB.length - 2]!)
     : [-1, 0, 0] as Vec3;
 
   // Back up each sphere along its velocity vector so they start just touching.
@@ -436,8 +436,8 @@ function generateCollisionShatter(
     fragmentsB,
     scaledVelA,
     scaledVelB,
-    masses[colA],
-    masses[colB],
+    masses[colA]!,
+    masses[colB]!,
     radiusA,
     radiusB,
     settings.end.physicsSteps,
@@ -448,16 +448,16 @@ function generateCollisionShatter(
   const strutRadius = minTubeRadius * 0.15;
 
   for (let j = 0; j < simResults.length; j++) {
-    const fragMesh = simResults[j];
+    const fragMesh = simResults[j]!;
     if (fragMesh.vertices.length === 0) continue;
 
     const isA = j < nA;
     const bodyIdx = isA ? colA : colB;
-    const material = BODY_NAMES[bodyIdx];
+    const material = BODY_NAMES[bodyIdx]!;
     const sphereCenter = isA ? endA : endB;
 
     // Fragment mesh
-    meshes.push({ name: `end_${BODY_NAMES[bodyIdx]}`, material, mesh: fragMesh });
+    meshes.push({ name: `end_${BODY_NAMES[bodyIdx]!}`, material, mesh: fragMesh });
 
     // Support strut: ray from sphere center toward fragment centroid
     const fragCentroid: Vec3 = [0, 0, 0];
@@ -477,7 +477,7 @@ function generateCollisionShatter(
       const hitPt = rayMeshIntersect(sphereCenter, rayDirN, fragMesh, rayLen) ?? fragCentroid;
       const strut = generateTube([sphereCenter, hitPt], strutRadius, strutRadius, 8);
       if (strut.vertices.length > 0) {
-        meshes.push({ name: `strut_${BODY_NAMES[bodyIdx]}`, material, mesh: strut });
+        meshes.push({ name: `strut_${BODY_NAMES[bodyIdx]!}`, material, mesh: strut });
       }
     }
   }

@@ -12,11 +12,11 @@ export function checkCollision(
 ): [number, number] | null {
   const n = positions.length;
   for (let i = 0; i < n; i++) {
-    const ri = bodyRadius(masses[i]);
+    const ri = bodyRadius(masses[i]!);
     for (let j = i + 1; j < n; j++) {
-      const rj = bodyRadius(masses[j]);
+      const rj = bodyRadius(masses[j]!);
       const combinedRadius = ri + rj;
-      if (distanceSq(positions[i], positions[j]) < combinedRadius * combinedRadius) {
+      if (distanceSq(positions[i]!, positions[j]!) < combinedRadius * combinedRadius) {
         return [i, j];
       }
     }

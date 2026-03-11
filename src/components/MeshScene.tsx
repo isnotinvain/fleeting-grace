@@ -26,17 +26,17 @@ function MeshObject({ mesh, material }: { mesh: AppMesh; material: string }) {
 
     const positions = new Float32Array(mesh.vertices.length * 3);
     for (let i = 0; i < mesh.vertices.length; i++) {
-      positions[i * 3] = mesh.vertices[i][0];
-      positions[i * 3 + 1] = mesh.vertices[i][1];
-      positions[i * 3 + 2] = mesh.vertices[i][2];
+      positions[i * 3] = mesh.vertices[i]![0];
+      positions[i * 3 + 1] = mesh.vertices[i]![1];
+      positions[i * 3 + 2] = mesh.vertices[i]![2];
     }
     geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
 
     const indices = new Uint32Array(mesh.faces.length * 3);
     for (let i = 0; i < mesh.faces.length; i++) {
-      indices[i * 3] = mesh.faces[i][0];
-      indices[i * 3 + 1] = mesh.faces[i][1];
-      indices[i * 3 + 2] = mesh.faces[i][2];
+      indices[i * 3] = mesh.faces[i]![0];
+      indices[i * 3 + 1] = mesh.faces[i]![1];
+      indices[i * 3 + 2] = mesh.faces[i]![2];
     }
     geom.setIndex(new THREE.BufferAttribute(indices, 1));
     geom.computeVertexNormals();

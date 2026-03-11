@@ -45,7 +45,7 @@ export function runSimulation(
   // Record trajectories (raw, before simplification)
   const trajectories: Vec3[][] = Array.from({ length: n }, () => []);
   for (let i = 0; i < n; i++) {
-    trajectories[i].push([...pos[i]] as Vec3);
+    trajectories[i]!.push([...pos[i]!] as Vec3);
   }
 
   // Safe scale tracking: sliding window of pairwise distances
@@ -60,7 +60,7 @@ export function runSimulation(
   let pairIdx = 0;
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      pairRadii[pairIdx] = bodyRadius(masses[i]) + bodyRadius(masses[j]);
+      pairRadii[pairIdx] = bodyRadius(masses[i]!) + bodyRadius(masses[j]!);
       pairIdx++;
     }
   }
@@ -72,9 +72,9 @@ export function runSimulation(
   for (step = 1; step <= maxSteps; step++) {
     // Velocity-Verlet: update positions
     for (let i = 0; i < n; i++) {
-      pos[i][0] += vel[i][0] * dt + 0.5 * acc[i][0] * dt * dt;
-      pos[i][1] += vel[i][1] * dt + 0.5 * acc[i][1] * dt * dt;
-      pos[i][2] += vel[i][2] * dt + 0.5 * acc[i][2] * dt * dt;
+      pos[i]![0] += vel[i]![0] * dt + 0.5 * acc[i]![0] * dt * dt;
+      pos[i]![1] += vel[i]![1] * dt + 0.5 * acc[i]![1] * dt * dt;
+      pos[i]![2] += vel[i]![2] * dt + 0.5 * acc[i]![2] * dt * dt;
     }
 
     // New accelerations
@@ -82,29 +82,29 @@ export function runSimulation(
 
     // Update velocities
     for (let i = 0; i < n; i++) {
-      vel[i][0] += 0.5 * (acc[i][0] + newAcc[i][0]) * dt;
-      vel[i][1] += 0.5 * (acc[i][1] + newAcc[i][1]) * dt;
-      vel[i][2] += 0.5 * (acc[i][2] + newAcc[i][2]) * dt;
+      vel[i]![0] += 0.5 * (acc[i]![0] + newAcc[i]![0]) * dt;
+      vel[i]![1] += 0.5 * (acc[i]![1] + newAcc[i]![1]) * dt;
+      vel[i]![2] += 0.5 * (acc[i]![2] + newAcc[i]![2]) * dt;
     }
 
     acc = newAcc;
 
     // Record positions
     for (let i = 0; i < n; i++) {
-      trajectories[i].push([...pos[i]] as Vec3);
+      trajectories[i]!.push([...pos[i]!] as Vec3);
     }
 
     // Compute pairwise distances and detect close-encounter minima
     pairIdx = 0;
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
-        const d = Math.sqrt(distanceSq(pos[i], pos[j]));
+        const d = Math.sqrt(distanceSq(pos[i]!, pos[j]!));
         currDist[pairIdx] = d;
 
         // Sliding window: if prevDist was a local minimum (less than both
         // the distance before it and the current distance), record it
-        if (step >= 2 && prevDist[pairIdx] < d) {
-          const scaleFactor = prevDist[pairIdx] / pairRadii[pairIdx];
+        if (step >= 2 && prevDist[pairIdx]! < d) {
+          const scaleFactor = prevDist[pairIdx]! / pairRadii[pairIdx]!;
           if (scaleFactor < minScaleFactor) {
             minScaleFactor = scaleFactor;
           }

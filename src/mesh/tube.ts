@@ -27,9 +27,9 @@ export function generateTube(
   for (let i = 0; i < nPts; i++) {
     const t = nPts === 1 ? 0 : i / (nPts - 1);
     const radius = startRadius * (1 - t) + endRadius * t;
-    const p = points[i];
-    const n = normals[i];
-    const b = binormals[i];
+    const p = points[i]!;
+    const n = normals[i]!;
+    const b = binormals[i]!;
 
     for (let j = 0; j < segments; j++) {
       const angle = (2 * Math.PI * j) / segments;
@@ -60,14 +60,14 @@ export function generateTube(
 
   // Start cap
   const startCenter = vertices.length;
-  vertices.push([...points[0]]);
+  vertices.push([...points[0]!] as Vec3);
   for (let j = 0; j < segments; j++) {
     faces.push([startCenter, j, (j + 1) % segments]);
   }
 
   // End cap
   const endCenter = vertices.length;
-  vertices.push([...points[nPts - 1]]);
+  vertices.push([...points[nPts - 1]!] as Vec3);
   const lastBase = (nPts - 1) * segments;
   for (let j = 0; j < segments; j++) {
     faces.push([endCenter, lastBase + (j + 1) % segments, lastBase + j]);

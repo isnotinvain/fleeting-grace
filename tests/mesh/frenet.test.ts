@@ -17,16 +17,16 @@ describe("computeFrenetFrames", () => {
 
     for (let i = 0; i < 10; i++) {
       // All tangents point along +x
-      expect(tangents[i][0]).toBeCloseTo(1, 5);
+      expect(tangents[i]![0]).toBeCloseTo(1, 5);
 
       // Each frame is orthonormal
-      expect(length(tangents[i])).toBeCloseTo(1, 5);
-      expect(length(normals[i])).toBeCloseTo(1, 5);
-      expect(length(binormals[i])).toBeCloseTo(1, 5);
+      expect(length(tangents[i]!)).toBeCloseTo(1, 5);
+      expect(length(normals[i]!)).toBeCloseTo(1, 5);
+      expect(length(binormals[i]!)).toBeCloseTo(1, 5);
 
-      expect(dot(tangents[i], normals[i])).toBeCloseTo(0, 5);
-      expect(dot(tangents[i], binormals[i])).toBeCloseTo(0, 5);
-      expect(dot(normals[i], binormals[i])).toBeCloseTo(0, 5);
+      expect(dot(tangents[i]!, normals[i]!)).toBeCloseTo(0, 5);
+      expect(dot(tangents[i]!, binormals[i]!)).toBeCloseTo(0, 5);
+      expect(dot(normals[i]!, binormals[i]!)).toBeCloseTo(0, 5);
     }
   });
 
@@ -38,10 +38,10 @@ describe("computeFrenetFrames", () => {
     const { tangents, normals, binormals } = computeFrenetFrames(points);
 
     for (let i = 0; i < tangents.length; i++) {
-      expect(length(tangents[i])).toBeCloseTo(1, 3);
-      expect(length(normals[i])).toBeCloseTo(1, 3);
-      expect(length(binormals[i])).toBeCloseTo(1, 3);
-      expect(dot(tangents[i], normals[i])).toBeCloseTo(0, 3);
+      expect(length(tangents[i]!)).toBeCloseTo(1, 3);
+      expect(length(normals[i]!)).toBeCloseTo(1, 3);
+      expect(length(binormals[i]!)).toBeCloseTo(1, 3);
+      expect(dot(tangents[i]!, normals[i]!)).toBeCloseTo(0, 3);
     }
   });
 
@@ -53,10 +53,10 @@ describe("computeFrenetFrames", () => {
     const { tangents, normals, binormals } = computeFrenetFrames(points);
 
     for (let i = 0; i < tangents.length; i++) {
-      const expected = cross(tangents[i], normals[i]);
-      expect(binormals[i][0]).toBeCloseTo(expected[0], 5);
-      expect(binormals[i][1]).toBeCloseTo(expected[1], 5);
-      expect(binormals[i][2]).toBeCloseTo(expected[2], 5);
+      const expected = cross(tangents[i]!, normals[i]!);
+      expect(binormals[i]![0]).toBeCloseTo(expected[0], 5);
+      expect(binormals[i]![1]).toBeCloseTo(expected[1], 5);
+      expect(binormals[i]![2]).toBeCloseTo(expected[2], 5);
     }
   });
 
@@ -69,7 +69,7 @@ describe("computeFrenetFrames", () => {
 
     for (let i = 1; i < normals.length; i++) {
       // Adjacent normals should be similar (dot product close to 1)
-      expect(dot(normals[i - 1], normals[i])).toBeGreaterThan(0.9);
+      expect(dot(normals[i - 1]!, normals[i]!)).toBeGreaterThan(0.9);
     }
   });
 });

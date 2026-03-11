@@ -56,7 +56,7 @@ describe("generateShatterFragments", () => {
     const b = generateShatterFragments([0, 0, 0], 1, [1, 0, 0], 10, 3, 42);
     expect(a.length).toBe(b.length);
     for (let i = 0; i < a.length; i++) {
-      expect(a[i].centroid).toEqual(b[i].centroid);
+      expect(a[i]!.centroid).toEqual(b[i]!.centroid);
     }
   });
 
@@ -67,9 +67,9 @@ describe("generateShatterFragments", () => {
     const anyDifferent = a.some(
       (f, i) =>
         i < b.length &&
-        (f.centroid[0] !== b[i].centroid[0] ||
-          f.centroid[1] !== b[i].centroid[1] ||
-          f.centroid[2] !== b[i].centroid[2]),
+        (f.centroid[0] !== b[i]!.centroid[0] ||
+          f.centroid[1] !== b[i]!.centroid[1] ||
+          f.centroid[2] !== b[i]!.centroid[2]),
     );
     expect(anyDifferent).toBe(true);
   });
@@ -79,9 +79,9 @@ describe("generateShatterFragments", () => {
     for (const frag of frags) {
       const { vertices, faces } = frag.mesh;
       for (const [a, b, c] of faces) {
-        const v0 = vertices[a];
-        const e1: Vec3 = [vertices[b][0] - v0[0], vertices[b][1] - v0[1], vertices[b][2] - v0[2]];
-        const e2: Vec3 = [vertices[c][0] - v0[0], vertices[c][1] - v0[1], vertices[c][2] - v0[2]];
+        const v0 = vertices[a]!;
+        const e1: Vec3 = [vertices[b]![0] - v0[0], vertices[b]![1] - v0[1], vertices[b]![2] - v0[2]];
+        const e2: Vec3 = [vertices[c]![0] - v0[0], vertices[c]![1] - v0[1], vertices[c]![2] - v0[2]];
         const normal: Vec3 = [
           e1[1] * e2[2] - e1[2] * e2[1],
           e1[2] * e2[0] - e1[0] * e2[2],
@@ -119,8 +119,8 @@ describe("simulateShatterPhysics", () => {
     const allFrags = [...fragsA, ...fragsB];
     let totalDisplacement = 0;
     for (let i = 0; i < results.length; i++) {
-      const origCentroid = allFrags[i].centroid;
-      const newVerts = results[i].vertices;
+      const origCentroid = allFrags[i]!.centroid;
+      const newVerts = results[i]!.vertices;
       const newCentroid: Vec3 = [0, 0, 0];
       for (const v of newVerts) {
         newCentroid[0] += v[0];
@@ -149,8 +149,8 @@ describe("simulateShatterPhysics", () => {
     const frags = generateShatterFragments([0, 0, 0], testRadius, [1, 0, 0], 4, 1);
     const results = simulateShatterPhysics(frags, [], [1, 0, 0], [0, 0, 0], testMass, testMass, testRadius, testRadius, 20);
     for (let i = 0; i < frags.length; i++) {
-      expect(results[i].faces).toEqual(frags[i].mesh.faces);
-      expect(results[i].vertices.length).toBe(frags[i].mesh.vertices.length);
+      expect(results[i]!.faces).toEqual(frags[i]!.mesh.faces);
+      expect(results[i]!.vertices.length).toBe(frags[i]!.mesh.vertices.length);
     }
   });
 });

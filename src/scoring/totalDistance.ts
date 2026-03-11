@@ -7,7 +7,7 @@ const SCALE = 1e14;
 function pathLength(trajectory: Vec3[]): number {
   let total = 0;
   for (let i = 1; i < trajectory.length; i++) {
-    total += distance(trajectory[i - 1], trajectory[i]);
+    total += distance(trajectory[i - 1]!, trajectory[i]!);
   }
   return total;
 }

@@ -1,6 +1,6 @@
 import type { Vec3 } from "../simulation/types";
 import type { Mesh } from "./tube";
-import { normalize, cross, dot, length, addScaled } from "../utils/vec3";
+import { normalize, cross, dot, length } from "../utils/vec3";
 
 /**
  * Generate a flat extruded arrow with notched tip and notched tail.
@@ -138,8 +138,8 @@ export function generateFlatArrow(
     const next = outline[(i + 1) % outline.length];
 
     // Quad: top[curr], top[next], bot[next], bot[curr]
-    faces.push([top + curr, top + next, bot + next]);
-    faces.push([top + curr, bot + next, bot + curr]);
+    faces.push([top + curr!, top + next!, bot + next!]);
+    faces.push([top + curr!, bot + next!, bot + curr!]);
   }
 
   return { vertices, faces };

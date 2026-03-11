@@ -19,7 +19,7 @@ export const directionEntropy: ScoreFunction = {
 
     for (const traj of result.trajectories) {
       for (let i = 1; i < traj.length; i++) {
-        const seg = sub(traj[i], traj[i - 1]);
+        const seg = sub(traj[i]!, traj[i - 1]!);
         const len = length(seg);
         if (len < 1e-10) continue;
 
@@ -37,7 +37,7 @@ export const directionEntropy: ScoreFunction = {
         const phiBin = Math.min(N_BINS - 1, Math.floor((phi / Math.PI) * N_BINS));
         const binIdx = thetaBin * N_BINS + phiBin;
 
-        bins[binIdx]++;
+        bins[binIdx] = (bins[binIdx] ?? 0) + 1;
         totalSamples++;
       }
     }
@@ -47,8 +47,8 @@ export const directionEntropy: ScoreFunction = {
     // Shannon entropy
     let entropy = 0;
     for (let i = 0; i < bins.length; i++) {
-      if (bins[i] === 0) continue;
-      const p = bins[i] / totalSamples;
+      if ((bins[i] ?? 0) === 0) continue;
+      const p = bins[i]! / totalSamples;
       entropy -= p * Math.log(p);
     }
 

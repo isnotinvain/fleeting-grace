@@ -10,7 +10,7 @@ import { totalDistance } from "../../src/scoring/totalDistance";
 import { duration } from "../../src/scoring/duration";
 import { scoreFunctions } from "../../src/scoring/registry";
 import type { SimulationResult, Vec3 } from "../../src/simulation/types";
-import { DEFAULT_SIMULATION_SETTINGS } from "../../src/simulation/types";
+// DEFAULT_SIMULATION_SETTINGS unused but kept for potential future use
 
 /** Helper to create a minimal SimulationResult from trajectories. */
 function makeResult(
@@ -112,7 +112,7 @@ describe("tortuosity", () => {
   it("circle scores high (returns near start)", () => {
     const circle = circleTrajectory(1e11, 200);
     // Close the circle
-    circle.push(circle[0]);
+    circle.push(circle[0]!);
     expect(tortuosity.score(makeResult([circle]))).toBeGreaterThan(0.9);
   });
 });

@@ -37,9 +37,9 @@ export const interweaving: ScoreFunction = {
 
     for (let i = 0; i < sampled.length; i++) {
       for (let j = i + 1; j < sampled.length; j++) {
-        for (const p of sampled[i]) {
+        for (const p of sampled[i]!) {
           let minDSq = Infinity;
-          for (const q of sampled[j]) {
+          for (const q of sampled[j]!) {
             const dsq = distanceSq(p, q);
             if (dsq < minDSq) minDSq = dsq;
           }
@@ -47,9 +47,9 @@ export const interweaving: ScoreFunction = {
           pairCount++;
         }
         // Also check from j to i
-        for (const p of sampled[j]) {
+        for (const p of sampled[j]!) {
           let minDSq = Infinity;
-          for (const q of sampled[i]) {
+          for (const q of sampled[i]!) {
             const dsq = distanceSq(p, q);
             if (dsq < minDSq) minDSq = dsq;
           }
@@ -71,7 +71,7 @@ function sampleTrajectory(traj: Vec3[], maxPoints: number): Vec3[] {
   const result: Vec3[] = [];
   for (let i = 0; i < maxPoints; i++) {
     const idx = Math.round((i / (maxPoints - 1)) * (traj.length - 1));
-    result.push(traj[idx]);
+    result.push(traj[idx]!);
   }
   return result;
 }

@@ -7,7 +7,7 @@ import type { NamedMesh } from "../mesh/pipeline";
 import { generateObj, generateMtl, downloadFile } from "../mesh/exportObj";
 import type { ExportSettings, StartStyle, EndStyle } from "../mesh/types";
 import { DEFAULT_EXPORT_SETTINGS } from "../mesh/types";
-import { decodeInitialConditionsUrlSafe, encodeInitialConditions } from "../utils/base64ic";
+import { decodeInitialConditionsUrlSafe } from "../utils/base64ic";
 import type { SimulationResult } from "../simulation/types";
 
 export function ExportPage() {
@@ -21,7 +21,7 @@ export function ExportPage() {
   const setExportSettings = useStore((s) => s.setExportSettings);
 
   // Decode IC from URL and find matching simulation in memory
-  const [sim, simIndex] = findSimulation(simulations, icParam);
+  const [sim] = findSimulation(simulations, icParam);
   const [rerunAttempted, setRerunAttempted] = useState(false);
 
   // If sim not in memory, re-run it from the IC in the URL
@@ -247,7 +247,7 @@ function findSimulation(
   try {
     const ic = decodeInitialConditionsUrlSafe(icParam);
     for (let i = 0; i < simulations.length; i++) {
-      const simIc = simulations[i].initialConditions;
+      const simIc = simulations[i]!.initialConditions;
       if (icMatches(ic, simIc)) return [simulations[i], i];
     }
   } catch {
@@ -264,8 +264,8 @@ function icMatches(
   for (let i = 0; i < 3; i++) {
     if (a.masses[i] !== b.masses[i]) return false;
     for (let d = 0; d < 3; d++) {
-      if (a.positions[i][d] !== b.positions[i][d]) return false;
-      if (a.velocities[i][d] !== b.velocities[i][d]) return false;
+      if (a.positions[i]![d] !== b.positions[i]![d]) return false;
+      if (a.velocities[i]![d] !== b.velocities[i]![d]) return false;
     }
   }
   return true;

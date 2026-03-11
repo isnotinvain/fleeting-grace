@@ -1,6 +1,6 @@
 import type { Vec3 } from "../simulation/types";
 import type { Mesh } from "./tube";
-import { add, sub, scale, dot, cross, normalize, length } from "../utils/vec3";
+import { add, sub, scale, dot, cross, normalize } from "../utils/vec3";
 import quickhull3d from "quickhull3d";
 import RAPIER from "@dimforge/rapier3d-compat";
 
@@ -19,9 +19,9 @@ export interface Fragment {
 function convexHullVolume(vertices: Vec3[], faces: [number, number, number][]): number {
   let vol = 0;
   for (const [a, b, c] of faces) {
-    const v0 = vertices[a];
-    const v1 = vertices[b];
-    const v2 = vertices[c];
+    const v0 = vertices[a]!;
+    const v1 = vertices[b]!;
+    const v2 = vertices[c]!;
     vol += v0[0] * (v1[1] * v2[2] - v1[2] * v2[1])
          + v0[1] * (v1[2] * v2[0] - v1[0] * v2[2])
          + v0[2] * (v1[0] * v2[1] - v1[1] * v2[0]);
@@ -131,9 +131,9 @@ function assignToNearestSeed(points: Vec3[], seeds: Vec3[]): number[] {
   for (let i = 0; i < points.length; i++) {
     let bestDist = Infinity;
     let bestSeed = 0;
-    const p = points[i];
+    const p = points[i]!;
     for (let j = 0; j < seeds.length; j++) {
-      const s = seeds[j];
+      const s = seeds[j]!;
       const dx = p[0] - s[0];
       const dy = p[1] - s[1];
       const dz = p[2] - s[2];
@@ -157,9 +157,9 @@ function fixWinding(
   centroid: Vec3,
 ): [number, number, number][] {
   return faces.map(([a, b, c]) => {
-    const v0 = vertices[a];
-    const edge1 = sub(vertices[b], v0);
-    const edge2 = sub(vertices[c], v0);
+    const v0 = vertices[a]!;
+    const edge1 = sub(vertices[b]!, v0);
+    const edge2 = sub(vertices[c]!, v0);
     const faceNormal = cross(edge1, edge2);
     const toFace = sub(v0, centroid);
     if (dot(faceNormal, toFace) < 0) {
@@ -203,7 +203,7 @@ export function generateShatterFragments(
     if (cellPoints.length < 4) continue;
 
     // quickhull3d expects number[][] and returns number[][]
-    const pointsArr = cellPoints.map((p) => [p[0], p[1], p[2]]);
+    const pointsArr = cellPoints.map((p) => [p[0], p[1], p[2]] as [number, number, number]);
     let hullFaces: number[][];
     try {
       hullFaces = quickhull3d(pointsArr);
@@ -317,7 +317,7 @@ export function simulateShatterPhysics(
   const bodyHandlePerFragment: (RAPIER.RigidBodyHandle | null)[] = [];
 
   for (let i = 0; i < allFragments.length; i++) {
-    const frag = allFragments[i];
+    const frag = allFragments[i]!;
     const { mesh, centroid, volume } = frag;
     const vel = i < nA ? velA : velB;
     const density = i < nA ? densityA : densityB;
@@ -328,9 +328,9 @@ export function simulateShatterPhysics(
     // Center vertices on centroid for the collider shape
     const centeredVerts = new Float32Array(mesh.vertices.length * 3);
     for (let j = 0; j < mesh.vertices.length; j++) {
-      centeredVerts[j * 3 + 0] = mesh.vertices[j][0] - centroid[0];
-      centeredVerts[j * 3 + 1] = mesh.vertices[j][1] - centroid[1];
-      centeredVerts[j * 3 + 2] = mesh.vertices[j][2] - centroid[2];
+      centeredVerts[j * 3 + 0] = mesh.vertices[j]![0] - centroid[0];
+      centeredVerts[j * 3 + 1] = mesh.vertices[j]![1] - centroid[1];
+      centeredVerts[j * 3 + 2] = mesh.vertices[j]![2] - centroid[2];
     }
 
     // Create convex hull collider descriptor
@@ -363,11 +363,11 @@ export function simulateShatterPhysics(
   const results: Mesh[] = [];
 
   for (let i = 0; i < allFragments.length; i++) {
-    const frag = allFragments[i];
+    const frag = allFragments[i]!;
     const { mesh, centroid } = frag;
     const handle = bodyHandlePerFragment[i];
 
-    if (handle === null) {
+    if (handle === null || handle === undefined) {
       // Degenerate hull — return unchanged
       results.push({ vertices: [...mesh.vertices], faces: mesh.faces });
       continue;
@@ -378,7 +378,7 @@ export function simulateShatterPhysics(
     const rot = body.rotation();
 
     // Transform vertices: rotate (v - centroid), then translate to new position
-    const newVertices = mesh.vertices.map((v) => {
+    const newVertices = mesh.vertices.map((v: Vec3) => {
       const centered: Vec3 = [v[0] - centroid[0], v[1] - centroid[1], v[2] - centroid[2]];
       const rotated = applyQuaternion(centered, rot);
       return [rotated[0] + pos.x, rotated[1] + pos.y, rotated[2] + pos.z] as Vec3;
@@ -437,7 +437,7 @@ export function rayMeshIntersect(
   let hit = false;
 
   for (const [a, b, c] of mesh.faces) {
-    const t = rayTriangleIntersect(origin, dir, mesh.vertices[a], mesh.vertices[b], mesh.vertices[c]);
+    const t = rayTriangleIntersect(origin, dir, mesh.vertices[a]!, mesh.vertices[b]!, mesh.vertices[c]!);
     if (t !== null && t < bestT) {
       bestT = t;
       hit = true;

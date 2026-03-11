@@ -45,11 +45,11 @@ describe("generateTube", () => {
     const mesh = generateTube(straightPath, 2, 0.5, 8);
     // First ring should be at larger radius than last ring
     const firstRingDist = Math.sqrt(
-      mesh.vertices[0][1] ** 2 + mesh.vertices[0][2] ** 2,
+      mesh.vertices[0]![1] ** 2 + mesh.vertices[0]![2] ** 2,
     );
     const lastRingIdx = (straightPath.length - 1) * 8;
     const lastRingDist = Math.sqrt(
-      mesh.vertices[lastRingIdx][1] ** 2 + mesh.vertices[lastRingIdx][2] ** 2,
+      mesh.vertices[lastRingIdx]![1] ** 2 + mesh.vertices[lastRingIdx]![2] ** 2,
     );
     expect(firstRingDist).toBeGreaterThan(lastRingDist);
   });
@@ -58,7 +58,7 @@ describe("generateTube", () => {
     const mesh = generateTube(straightPath, 1, 1, 16);
     // Check first ring (around point [0,0,0]) — all should be at radius 1
     for (let j = 0; j < 16; j++) {
-      const v = mesh.vertices[j];
+      const v = mesh.vertices[j]!;
       const dist = Math.sqrt(v[1] * v[1] + v[2] * v[2]);
       expect(dist).toBeCloseTo(1, 3);
     }

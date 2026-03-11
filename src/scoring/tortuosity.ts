@@ -1,5 +1,5 @@
 import type { ScoreFunction } from "./types";
-import type { SimulationResult, Vec3 } from "../simulation/types";
+import type { SimulationResult } from "../simulation/types";
 import { distance } from "../utils/vec3";
 
 /**
@@ -17,10 +17,10 @@ export const tortuosity: ScoreFunction = {
 
       let pathLen = 0;
       for (let i = 1; i < traj.length; i++) {
-        pathLen += distance(traj[i - 1], traj[i]);
+        pathLen += distance(traj[i - 1]!, traj[i]!);
       }
 
-      const displacement = distance(traj[0], traj[traj.length - 1]);
+      const displacement = distance(traj[0]!, traj[traj.length - 1]!);
 
       if (displacement < 1e-10) {
         sum += 1;

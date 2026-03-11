@@ -9,7 +9,7 @@ import {
   bodyRadius,
 } from "../../src/simulation/config";
 import { distance, length } from "../../src/utils/vec3";
-import type { Vec3, InitialConditions, SimulationSettings } from "../../src/simulation/types";
+import type { InitialConditions, SimulationSettings } from "../../src/simulation/types";
 
 const defaultSettings: SimulationSettings = {
   numSimulations: 1,
@@ -58,8 +58,8 @@ describe("runSimulation", () => {
 
     // After ~2 years, body 1 should have completed ~2 orbits
     // Check that it's still approximately 1 AU from body 0
-    const body0End = result.trajectories[0][result.trajectories[0].length - 1];
-    const body1End = result.trajectories[1][result.trajectories[1].length - 1];
+    const body0End = result.trajectories[0]![result.trajectories[0]!.length - 1]!;
+    const body1End = result.trajectories[1]![result.trajectories[1]!.length - 1]!;
     const finalDist = distance(body0End, body1End);
 
     // Should be within 5% of initial distance (Verlet is good at conservation)

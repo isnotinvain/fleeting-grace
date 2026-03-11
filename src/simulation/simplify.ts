@@ -52,11 +52,11 @@ export function simplifyTrajectory(points: Vec3[], epsilon?: number): Vec3[] {
     let maxDist = 0;
     let maxIndex = start;
 
-    const startPt = points[start];
-    const endPt = points[end];
+    const startPt = points[start]!;
+    const endPt = points[end]!;
 
     for (let i = start + 1; i < end; i++) {
-      const dist = pointToSegmentDistance(points[i], startPt, endPt);
+      const dist = pointToSegmentDistance(points[i]!, startPt, endPt);
       if (dist > maxDist) {
         maxDist = dist;
         maxIndex = i;
@@ -72,7 +72,7 @@ export function simplifyTrajectory(points: Vec3[], epsilon?: number): Vec3[] {
 
   const result: Vec3[] = [];
   for (let i = 0; i < n; i++) {
-    if (keep[i]) result.push(points[i]);
+    if (keep[i]) result.push(points[i]!);
   }
   return result;
 }

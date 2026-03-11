@@ -1,5 +1,5 @@
 import type { ScoreFunction } from "./types";
-import type { SimulationResult, Vec3 } from "../simulation/types";
+import type { SimulationResult } from "../simulation/types";
 import { sub, cross, length } from "../utils/vec3";
 
 const SCALE = 2;
@@ -17,8 +17,8 @@ export const curvatureVariance: ScoreFunction = {
       if (traj.length < 3) continue;
 
       for (let i = 1; i < traj.length - 1; i++) {
-        const v1 = sub(traj[i], traj[i - 1]);
-        const v2 = sub(traj[i + 1], traj[i]);
+        const v1 = sub(traj[i]!, traj[i - 1]!);
+        const v2 = sub(traj[i + 1]!, traj[i]!);
         const v1Len = length(v1);
         const v2Len = length(v2);
         const avgSpeed = (v1Len + v2Len) / 2;

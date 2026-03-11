@@ -1,6 +1,6 @@
 import type { ScoreFunction } from "./types";
 import type { SimulationResult, Vec3 } from "../simulation/types";
-import { distance, sub, addScaled, length } from "../utils/vec3";
+import { distance } from "../utils/vec3";
 
 const GRID_RESOLUTION = 10;
 
@@ -31,7 +31,7 @@ export const spaceFilling: ScoreFunction = {
     const distances = allPoints.map((p) => distance(p, center));
     distances.sort((a, b) => a - b);
     const idx95 = Math.floor(distances.length * 0.95);
-    const radius = distances[Math.min(idx95, distances.length - 1)];
+    const radius = distances[Math.min(idx95, distances.length - 1)]!;
     if (radius < 1e-10) return 0;
 
     // Count cells inside the unit sphere
@@ -61,15 +61,15 @@ export const spaceFilling: ScoreFunction = {
       for (let i = 0; i < traj.length; i++) {
         // For segments, sample along the segment
         const endIdx = i < traj.length - 1 ? i + 1 : i;
-        const segLen = i < traj.length - 1 ? distance(traj[i], traj[endIdx]) : 0;
+        const segLen = i < traj.length - 1 ? distance(traj[i]!, traj[endIdx]!) : 0;
         const nSamples = Math.max(1, Math.floor(segLen / cellSize * 2) + 1);
 
         for (let s = 0; s < nSamples; s++) {
           const t = nSamples === 1 ? 0 : s / (nSamples - 1);
           const pt: Vec3 = [
-            traj[i][0] + t * (traj[endIdx][0] - traj[i][0]),
-            traj[i][1] + t * (traj[endIdx][1] - traj[i][1]),
-            traj[i][2] + t * (traj[endIdx][2] - traj[i][2]),
+            traj[i]![0] + t * (traj[endIdx]![0] - traj[i]![0]),
+            traj[i]![1] + t * (traj[endIdx]![1] - traj[i]![1]),
+            traj[i]![2] + t * (traj[endIdx]![2] - traj[i]![2]),
           ];
 
           // Normalize to [-1, 1] then to grid indices

@@ -18,8 +18,8 @@ export const sweepingArcs: ScoreFunction = {
       if (traj.length < 3) continue;
 
       for (let i = 1; i < traj.length - 1; i++) {
-        const v1 = sub(traj[i], traj[i - 1]);
-        const v2 = sub(traj[i + 1], traj[i]);
+        const v1 = sub(traj[i]!, traj[i - 1]!);
+        const v2 = sub(traj[i + 1]!, traj[i]!);
         const v1Len = length(v1);
         const v2Len = length(v2);
         const avgSpeed = (v1Len + v2Len) / 2;
@@ -28,7 +28,7 @@ export const sweepingArcs: ScoreFunction = {
         const kappa = Math.max(1e-30, length(cross(v1, v2)) / (avgSpeed * avgSpeed));
         const radius = Math.min(1 / kappa, MAX_RADIUS);
 
-        const segLen = (distance(traj[i - 1], traj[i]) + distance(traj[i], traj[i + 1])) / 2;
+        const segLen = (distance(traj[i - 1]!, traj[i]!) + distance(traj[i]!, traj[i + 1]!)) / 2;
         total += segLen * radius;
       }
     }

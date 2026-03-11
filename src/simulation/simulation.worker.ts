@@ -22,7 +22,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
   const results: SimulationResult[] = [];
 
   for (let i = 0; i < total; i++) {
-    const result = runSimulation(ics[i], settings);
+    const result = runSimulation(ics[i]!, settings);
     results.push(result);
 
     const response: WorkerResponse = { type: "progress", done: i + 1, total };

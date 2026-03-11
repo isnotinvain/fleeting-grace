@@ -29,7 +29,7 @@ export function ResultsPage() {
     const weighted = perMetricScores.map((scores, simIdx) => {
       let total = 0;
       for (let i = 0; i < scores.length; i++) {
-        total += scores[i] * scoringWeights[i];
+        total += scores[i]! * scoringWeights[i]!;
       }
       return { simIdx, total };
     });
@@ -166,8 +166,8 @@ export function ResultsPage() {
             style={{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)` }}
           >
             {pageIndices.map((simIdx, gridPos) => {
-              const sim = simulations[simIdx];
-              const scores = perMetricScores[simIdx];
+              const sim = simulations[simIdx]!;
+              const scores = perMetricScores[simIdx]!;
               return (
                 <div
                   key={gridPos}
@@ -185,7 +185,7 @@ export function ResultsPage() {
                         <div
                           key={j}
                           className="h-1.5 flex-1 bg-gray-800 rounded-full"
-                          title={`${scoreFunctions[j].name}: ${(score * 100).toFixed(0)}%`}
+                          title={`${scoreFunctions[j]!.name}: ${(score * 100).toFixed(0)}%`}
                         >
                           <div
                             className="h-full bg-cyan-500 rounded-full"
