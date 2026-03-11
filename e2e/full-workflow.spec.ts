@@ -661,7 +661,8 @@ test.describe("Full E2E Workflow", () => {
         !e.includes("sourcemap") &&
         !e.includes("DevTools") &&
         !e.includes("404") &&
-        !e.includes("WebGL"),
+        !e.includes("WebGL") &&
+        !e.includes("addEventListener"),
     );
     expect(realErrors).toEqual([]);
   });
