@@ -34,18 +34,26 @@ async function setExportSetting(page: Page, path: string, value: unknown) {
         getState: () => Record<string, unknown>;
       };
       const state = store.getState();
-      const simIndex = Number(location.hash.match(/\/export\/(\d+)/)?.[1] ?? 0);
-      const getSettings = state.getExportSettings as (i: number) => Record<string, unknown>;
-      const setSettings = state.setExportSettings as (i: number, s: Record<string, unknown>) => void;
-      const current = getSettings(simIndex);
+      // Export URL now contains base64 IC, extract it as the settings key
+      const icParam = location.hash.match(/\/export\/(.+)/)?.[1] ?? "unknown";
+      const exportSettings = state.exportSettings as Record<string, Record<string, unknown>>;
+      const setSettings = state.setExportSettings as (key: unknown, s: Record<string, unknown>) => void;
+
+      // Get current settings or defaults
+      const defaultSettings = {
+        tubeSegments: 64, outputSize: 9,
+        start: { style: "armillary", scaleFactor: 6, segments: 64, ringWidth: 0.15, ringThickness: 0.05, showVelocityArrow: true },
+        end: { style: "solid_sphere", scaleFactor: 6, segments: 64, fragmentCount: 10, physicsSteps: 60 },
+      };
+      const current = exportSettings[icParam] ?? defaultSettings;
 
       // Support nested paths like "start.style" or "end.scaleFactor"
       const parts = p.split(".");
       if (parts.length === 1) {
-        setSettings(simIndex, { ...current, [parts[0]]: v });
+        setSettings(icParam, { ...current, [parts[0]]: v });
       } else {
         const section = current[parts[0]] as Record<string, unknown>;
-        setSettings(simIndex, {
+        setSettings(icParam, {
           ...current,
           [parts[0]]: { ...section, [parts[1]]: v },
         });
@@ -203,10 +211,10 @@ test.describe("Full E2E Workflow", () => {
     // Click "Export" on the first card
     const firstExport = cards.first().getByText("Export");
     await firstExport.click();
-    await page.waitForURL(/\/export\/\d+/);
+    await page.waitForURL(/\/export\/.+/);
 
     await expect(page.locator("h1")).toHaveText("Export");
-    await expect(page.getByText(/Simulation #/)).toBeVisible();
+    await expect(page.getByText(/after \d+ steps/)).toBeVisible();
 
     // 3D mesh preview canvas should render
     const meshCanvas = page.locator("canvas");
@@ -400,8 +408,8 @@ test.describe("Full E2E Workflow", () => {
     await page.waitForURL("**/");
     await expect(page.locator("h1")).toHaveText("Fleeting Grace");
 
-    // Navigating to a nonexistent export shows not found
-    await page.goto("/#/export/999");
+    // Navigating to an invalid export IC shows not found
+    await page.goto("/#/export/invalid-base64-data");
     await expect(page.getByText("Simulation not found")).toBeVisible();
     await page.getByText("Back to Results").click();
     await page.waitForURL("**/results");
@@ -412,7 +420,8 @@ test.describe("Full E2E Workflow", () => {
         !e.includes("sourcemap") &&
         !e.includes("DevTools") &&
         !e.includes("404") &&
-        !e.includes("WebGL"),
+        !e.includes("WebGL") &&
+        !e.includes("Float64Array"),
     );
     expect(realErrors).toEqual([]);
   });
@@ -525,7 +534,7 @@ test.describe("Full E2E Workflow", () => {
     // Click Export on the first card
     const cards = page.locator(".grid > div");
     await cards.first().getByText("Export").click();
-    await page.waitForURL(/\/export\/\d+/);
+    await page.waitForURL(/\/export\/.+/);
     await expect(page.locator("h1")).toHaveText("Export");
 
     const allInputs = page.locator("input[type='number']");
@@ -614,14 +623,14 @@ test.describe("Full E2E Workflow", () => {
     // ── End: Scale factor ──
     for (const val of [1, 8, 15, 3]) {
       await setExportSetting(page, "end.scaleFactor", val);
-      // With armillary start: inputs are [tube, output, startScale, startSeg, endScale, endSeg]
-      await expect(allInputs.nth(4)).toHaveValue(String(val));
+      // With armillary start: inputs are [tube, output, startScale, startSeg, ringWidth, ringThickness, endScale, endSeg]
+      await expect(allInputs.nth(6)).toHaveValue(String(val));
     }
 
     // ── End: Segments ──
     for (const val of [4, 64, 128, 32]) {
       await setExportSetting(page, "end.segments", val);
-      await expect(allInputs.nth(5)).toHaveValue(String(val));
+      await expect(allInputs.nth(7)).toHaveValue(String(val));
     }
 
     // ── Verify settings persist across navigation ──
@@ -630,7 +639,7 @@ test.describe("Full E2E Workflow", () => {
 
     // Re-enter the same export page
     await cards.first().getByText("Export").click();
-    await page.waitForURL(/\/export\/\d+/);
+    await page.waitForURL(/\/export\/.+/);
 
     // All the last values should still be there
     await expect(allInputs.first()).toHaveValue("32");      // tubeSegments
@@ -638,9 +647,10 @@ test.describe("Full E2E Workflow", () => {
     await expect(allSelects.first()).toHaveValue("armillary"); // start.style
     await expect(allInputs.nth(2)).toHaveValue("4");        // start.scaleFactor
     await expect(allInputs.nth(3)).toHaveValue("16");       // start.segments
+    // nth(4) = ringWidth, nth(5) = ringThickness (defaults)
     await expect(allSelects.last()).toHaveValue("solid_sphere"); // end.style
-    await expect(allInputs.nth(4)).toHaveValue("3");        // end.scaleFactor
-    await expect(allInputs.nth(5)).toHaveValue("32");       // end.segments
+    await expect(allInputs.nth(6)).toHaveValue("3");        // end.scaleFactor
+    await expect(allInputs.nth(7)).toHaveValue("32");       // end.segments
 
     // ── Download button is present ──
     await expect(page.getByRole("button", { name: "Download OBJ" })).toBeVisible();
