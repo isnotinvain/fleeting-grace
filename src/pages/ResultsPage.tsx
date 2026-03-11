@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useStore } from "../store";
 import { scoreFunctions } from "../scoring/registry";
 import { SimulationScene } from "../components/SimulationScene";
+import { encodeInitialConditionsUrlSafe } from "../utils/base64ic";
 
 export function ResultsPage() {
   const navigate = useNavigate();
@@ -197,7 +198,7 @@ export function ResultsPage() {
                       <span className="text-xs text-gray-500">{sim.reason}</span>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => navigate(`/export/${simIdx}`)}
+                          onClick={() => navigate(`/export/${encodeInitialConditionsUrlSafe(sim.initialConditions)}`)}
                           className="text-xs text-cyan-500 hover:text-cyan-400 transition-colors"
                         >
                           Export

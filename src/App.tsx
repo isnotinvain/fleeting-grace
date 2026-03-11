@@ -9,7 +9,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<SetupPage />} />
         <Route path="/results" element={<ResultsPage />} />
-        <Route path="/export/:simIndex" element={<ExportPage />} />
+        <Route path="/export/:ic" element={<ExportPage />} />
       </Routes>
     </HashRouter>
   );

@@ -6,26 +6,44 @@ import { generateAllMeshes } from "../mesh/pipeline";
 import type { NamedMesh } from "../mesh/pipeline";
 import { generateObj, generateMtl, downloadFile } from "../mesh/exportObj";
 import type { ExportSettings, StartStyle, EndStyle } from "../mesh/types";
+import { DEFAULT_EXPORT_SETTINGS } from "../mesh/types";
+import { decodeInitialConditionsUrlSafe, encodeInitialConditions } from "../utils/base64ic";
+import type { SimulationResult } from "../simulation/types";
 
 export function ExportPage() {
   const navigate = useNavigate();
-  const { simIndex: simIndexStr } = useParams<{ simIndex: string }>();
-  const simIndex = Number(simIndexStr);
+  const { ic: icParam } = useParams<{ ic: string }>();
 
   const simulations = useStore((s) => s.simulations);
+  const addSimulationFromBase64 = useStore((s) => s.addSimulationFromBase64);
+  const isRunning = useStore((s) => s.isRunning);
   const exportSettingsMap = useStore((s) => s.exportSettings);
-  const getExportSettings = useStore((s) => s.getExportSettings);
   const setExportSettings = useStore((s) => s.setExportSettings);
 
-  const sim = simulations[simIndex];
-  // Subscribe to exportSettingsMap so we re-render when settings change
-  const settings = exportSettingsMap[simIndex] ?? getExportSettings(simIndex);
+  // Decode IC from URL and find matching simulation in memory
+  const [sim, simIndex] = findSimulation(simulations, icParam);
+  const [rerunAttempted, setRerunAttempted] = useState(false);
+
+  // If sim not in memory, re-run it from the IC in the URL
+  useEffect(() => {
+    if (sim || rerunAttempted || !icParam || isRunning) return;
+    setRerunAttempted(true);
+    // Restore standard base64 from URL-safe
+    let b64 = icParam.replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4 !== 0) b64 += "=";
+    addSimulationFromBase64(b64);
+  }, [sim, rerunAttempted, icParam, isRunning, addSimulationFromBase64]);
+
+  // Use IC string as settings key (stable across re-runs)
+  const settingsKey = icParam ?? "unknown";
+  const settings = exportSettingsMap[settingsKey as unknown as number] ??
+    DEFAULT_EXPORT_SETTINGS;
 
   const update = useCallback(
     (partial: Partial<ExportSettings>) => {
-      setExportSettings(simIndex, { ...settings, ...partial });
+      setExportSettings(settingsKey as unknown as number, { ...settings, ...partial });
     },
-    [simIndex, settings, setExportSettings],
+    [settingsKey, settings, setExportSettings],
   );
 
   const [meshes, setMeshes] = useState<NamedMesh[]>([]);
@@ -54,10 +72,16 @@ export function ExportPage() {
   if (!sim) {
     return (
       <div className="min-h-screen bg-gray-950 text-white p-8 flex flex-col items-center justify-center">
-        <p className="text-gray-400 mb-4">Simulation not found.</p>
-        <button onClick={() => navigate("/results")} className="text-cyan-500">
-          Back to Results
-        </button>
+        {isRunning ? (
+          <p className="text-gray-400">Re-running simulation from URL...</p>
+        ) : (
+          <>
+            <p className="text-gray-400 mb-4">Simulation not found.</p>
+            <button onClick={() => navigate("/results")} className="text-cyan-500">
+              Back to Results
+            </button>
+          </>
+        )}
       </div>
     );
   }
@@ -70,7 +94,7 @@ export function ExportPage() {
         <div>
           <h1 className="text-3xl font-bold">Export</h1>
           <p className="text-gray-400 mt-1">
-            Simulation #{simIndex} — {sim.reason} after {sim.steps} steps
+            {sim.reason} after {sim.steps} steps
           </p>
         </div>
         <button
@@ -181,9 +205,10 @@ export function ExportPage() {
 
           <button
             onClick={handleDownload}
-            className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold px-4 py-3 rounded-lg transition-colors"
+            disabled={generating || meshes.length === 0}
+            className="w-full bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold px-4 py-3 rounded-lg transition-colors"
           >
-            Download OBJ
+            {generating ? "Generating..." : "Download OBJ"}
           </button>
         </div>
 
@@ -194,6 +219,40 @@ export function ExportPage() {
       </div>
     </div>
   );
+}
+
+/** Find a simulation in the store that matches the URL-safe base64 IC. */
+function findSimulation(
+  simulations: SimulationResult[],
+  icParam: string | undefined,
+): [SimulationResult | undefined, number] {
+  if (!icParam || simulations.length === 0) return [undefined, -1];
+
+  try {
+    const ic = decodeInitialConditionsUrlSafe(icParam);
+    for (let i = 0; i < simulations.length; i++) {
+      const simIc = simulations[i].initialConditions;
+      if (icMatches(ic, simIc)) return [simulations[i], i];
+    }
+  } catch {
+    // Invalid base64
+  }
+  return [undefined, -1];
+}
+
+/** Check if two ICs are the same (compare all 21 float64 values). */
+function icMatches(
+  a: { positions: number[][]; velocities: number[][]; masses: number[] },
+  b: { positions: number[][]; velocities: number[][]; masses: number[] },
+): boolean {
+  for (let i = 0; i < 3; i++) {
+    if (a.masses[i] !== b.masses[i]) return false;
+    for (let d = 0; d < 3; d++) {
+      if (a.positions[i][d] !== b.positions[i][d]) return false;
+      if (a.velocities[i][d] !== b.velocities[i][d]) return false;
+    }
+  }
+  return true;
 }
 
 function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {

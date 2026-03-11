@@ -49,3 +49,20 @@ export function encodeInitialConditions(ic: InitialConditions): string {
   }
   return btoa(binary);
 }
+
+/** Encode initial conditions to URL-safe base64 (no +, /, or = padding). */
+export function encodeInitialConditionsUrlSafe(ic: InitialConditions): string {
+  return encodeInitialConditions(ic)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/** Decode URL-safe base64 initial conditions. */
+export function decodeInitialConditionsUrlSafe(urlSafe: string): InitialConditions {
+  // Restore standard base64
+  let b64 = urlSafe.replace(/-/g, "+").replace(/_/g, "/");
+  // Re-add padding
+  while (b64.length % 4 !== 0) b64 += "=";
+  return decodeInitialConditions(b64);
+}
