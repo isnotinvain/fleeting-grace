@@ -35,9 +35,31 @@ export function generateAllMeshes(
   // collisions at any point in the simulation
   const safeScale = result.maxSafeScale;
 
-  for (let bodyIdx = 0; bodyIdx < trajectories.length; bodyIdx++) {
-    const traj = trajectories[bodyIdx];
-    if (traj.length < 2) continue;
+  // Pre-scale all trajectories
+  const scaledTrajectories = trajectories.map((traj) =>
+    traj.map((p) => scalePoint(p, worldScale)),
+  );
+
+  // Per-body end sphere radii (used for collision truncation and end markers)
+  const endSphereRadii = ic.masses.map((m) => {
+    const tubeR = bodyRadius(m) * worldScale * safeScale;
+    return tubeR * settings.end.scaleFactor;
+  });
+
+  // Truncate colliding trajectories so their end spheres just touch (overlap at 70%)
+  if (result.reason === "collision" && settings.end.style !== "none") {
+    const [colA, colB] = findCollidingPair(scaledTrajectories);
+    truncateAtCollision(
+      scaledTrajectories[colA],
+      scaledTrajectories[colB],
+      endSphereRadii[colA],
+      endSphereRadii[colB],
+    );
+  }
+
+  for (let bodyIdx = 0; bodyIdx < scaledTrajectories.length; bodyIdx++) {
+    const scaledTraj = scaledTrajectories[bodyIdx];
+    if (scaledTraj.length < 2) continue;
 
     const bodyNum = bodyIdx + 1;
     const material = `body_${bodyNum}`;
@@ -49,8 +71,6 @@ export function generateAllMeshes(
     // Markers use a user-configurable multiplier on top of the tube radius
     const markerRadius = tubeRadius * settings.start.scaleFactor;
 
-    // Scale trajectory points
-    const scaledTraj = traj.map((p) => scalePoint(p, worldScale));
     const startPos = scaledTraj[0];
 
     // Truncate the beginning of the trajectory at the marker sphere edge
@@ -103,9 +123,10 @@ export function generateAllMeshes(
     }
 
     // End position marker (solid sphere only; exploding handled below)
-    const endPos = scaledTraj[scaledTraj.length - 1];
     if (settings.end.style === "solid_sphere") {
-      const sphere = generateSphere(endPos, markerRadius, settings.end.segments);
+      const endPos = scaledTraj[scaledTraj.length - 1];
+      const endRadius = endSphereRadii[bodyIdx];
+      const sphere = generateSphere(endPos, endRadius, settings.end.segments);
       meshes.push({ name: `end_${bodyNum}`, material, mesh: sphere });
     }
   }
@@ -117,9 +138,8 @@ export function generateAllMeshes(
       ...ic.masses.map((m) => bodyRadius(m) * worldScale * safeScale),
     );
     const shatterMeshes = generateCollisionShatter(
-      result,
-      trajectories,
-      worldScale,
+      scaledTrajectories,
+      endSphereRadii,
       minTubeRadius,
       settings,
     );
@@ -239,6 +259,64 @@ function truncateAtSphere(path: Vec3[], center: Vec3, radius: number): Vec3[] {
 }
 
 /**
+ * Truncate both colliding trajectories so their end spheres just touch.
+ * Walks both trajectories backwards (by equal fraction) using binary search
+ * until the distance between them equals 70% of sum of radii (slight overlap
+ * so it looks like an actual collision). Mutates the arrays in place.
+ */
+function truncateAtCollision(
+  trajA: Vec3[],
+  trajB: Vec3[],
+  radiusA: number,
+  radiusB: number,
+): void {
+  const sumRadii = radiusA + radiusB;
+
+  // Check if they even overlap at the end
+  const endDist = length(sub(trajA[trajA.length - 1], trajB[trajB.length - 1]));
+  if (endDist >= sumRadii) return;
+
+  function interp(traj: Vec3[], t: number): Vec3 {
+    const idx = t * (traj.length - 1);
+    const i = Math.floor(idx);
+    if (i >= traj.length - 1) return traj[traj.length - 1];
+    const frac = idx - i;
+    return [
+      traj[i][0] * (1 - frac) + traj[i + 1][0] * frac,
+      traj[i][1] * (1 - frac) + traj[i + 1][1] * frac,
+      traj[i][2] * (1 - frac) + traj[i + 1][2] * frac,
+    ];
+  }
+
+  // Binary search for t where distance = 70% of sum_radii
+  const overlapDist = sumRadii * 0.7;
+  let tLo = 0;
+  let tHi = 1;
+  for (let iter = 0; iter < 50; iter++) {
+    const tMid = (tLo + tHi) / 2;
+    const dist = length(sub(interp(trajA, tMid), interp(trajB, tMid)));
+    if (dist < overlapDist) {
+      tHi = tMid;
+    } else {
+      tLo = tMid;
+    }
+  }
+
+  const t = (tLo + tHi) / 2;
+
+  // Truncate each trajectory: keep points up to the cut index, then append interpolated point
+  const cutA = Math.floor(t * (trajA.length - 1));
+  const cutB = Math.floor(t * (trajB.length - 1));
+  const endPointA = interp(trajA, t);
+  const endPointB = interp(trajB, t);
+
+  trajA.length = cutA + 1;
+  trajA.push(endPointA);
+  trajB.length = cutB + 1;
+  trajB.push(endPointB);
+}
+
+/**
  * Find which two bodies collided by checking which pair ended closest together.
  * Returns [indexA, indexB] sorted ascending.
  */
@@ -263,21 +341,18 @@ function findCollidingPair(trajectories: Vec3[][]): [number, number] {
  * Generate shatter fragments and support struts for a collision.
  */
 function generateCollisionShatter(
-  result: SimulationResult,
-  trajectories: Vec3[][],
-  worldScale: number,
+  scaledTrajectories: Vec3[][],
+  endSphereRadii: number[],
   minTubeRadius: number,
   settings: ExportSettings,
 ): NamedMesh[] {
   const meshes: NamedMesh[] = [];
-  const ic = result.initialConditions;
-  const safeScale = Math.min(result.maxSafeScale, settings.end.scaleFactor);
-  const [colA, colB] = findCollidingPair(trajectories);
+  const [colA, colB] = findCollidingPair(scaledTrajectories);
 
-  const scaledTrajA = trajectories[colA].map((p) => scalePoint(p, worldScale));
-  const scaledTrajB = trajectories[colB].map((p) => scalePoint(p, worldScale));
-  const endA = scaledTrajA[scaledTrajA.length - 1];
-  const endB = scaledTrajB[scaledTrajB.length - 1];
+  const trajA = scaledTrajectories[colA];
+  const trajB = scaledTrajectories[colB];
+  const endA = trajA[trajA.length - 1];
+  const endB = trajB[trajB.length - 1];
 
   // Impact direction: from each body toward the midpoint
   const impactPoint: Vec3 = [
@@ -288,9 +363,8 @@ function generateCollisionShatter(
   const impactDirA = normalize(sub(impactPoint, endA));
   const impactDirB = normalize(sub(impactPoint, endB));
 
-  // Sphere radii
-  const radiusA = bodyRadius(ic.masses[colA]) * worldScale * safeScale;
-  const radiusB = bodyRadius(ic.masses[colB]) * worldScale * safeScale;
+  const radiusA = endSphereRadii[colA];
+  const radiusB = endSphereRadii[colB];
 
   const fragCount = settings.end.fragmentCount;
   const nBack = Math.max(1, Math.floor(fragCount * 0.3));
@@ -299,11 +373,11 @@ function generateCollisionShatter(
   const fragmentsB = generateShatterFragments(endB, radiusB, impactDirB, fragCount, nBack, colB * 1000 + 99);
 
   // Compute velocities from last two trajectory points
-  const velA = scaledTrajA.length >= 2
-    ? sub(scaledTrajA[scaledTrajA.length - 1], scaledTrajA[scaledTrajA.length - 2])
+  const velA = trajA.length >= 2
+    ? sub(trajA[trajA.length - 1], trajA[trajA.length - 2])
     : [1, 0, 0] as Vec3;
-  const velB = scaledTrajB.length >= 2
-    ? sub(scaledTrajB[scaledTrajB.length - 1], scaledTrajB[scaledTrajB.length - 2])
+  const velB = trajB.length >= 2
+    ? sub(trajB[trajB.length - 1], trajB[trajB.length - 2])
     : [-1, 0, 0] as Vec3;
 
   // Scale velocities for good visual spread
