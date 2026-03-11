@@ -3,10 +3,11 @@ import type { ExportSettings } from "./types";
 import type { Mesh } from "./tube";
 import { generateTube } from "./tube";
 import { generateSphere } from "./sphere";
-import { generateArrow } from "./arrow";
-import { generateArmillary, generateSingleRing } from "./armillary";
+import { generateFlatArrow } from "./flatArrow";
+import { generateFlatBar } from "./flatBar";
+import { generateArmillary, generateSingleRing, computeRingNormal } from "./armillary";
 import { bodyRadius } from "../simulation/config";
-import { sub, scale, length, normalize } from "../utils/vec3";
+import { sub, scale, add, length, normalize, cross, dot, addScaled } from "../utils/vec3";
 import { generateShatterFragments, initRapier, simulateShatterPhysics, rayMeshIntersect } from "./shatter";
 
 export interface NamedMesh {
@@ -102,20 +103,54 @@ export async function generateAllMeshes(
       }
     }
 
-    // Velocity arrow
+    // Velocity weathervane (post + flat arrow)
     if (settings.start.showVelocityArrow) {
       const vel = ic.velocities[bodyIdx];
       const velLen = length(vel);
       if (velLen > 1e-10) {
-        const arrowLength = markerRadius * 3;
-        const arrow = generateArrow(
-          startPos,
-          vel,
-          arrowLength,
-          tubeRadius * 1.5,
-          arrowLength * 0.3,
-          tubeRadius * 3,
-          Math.min(settings.tubeSegments, 16),
+        // Ring normal and "up" direction within the ring plane
+        const ringNormal = computeRingNormal(pathDir);
+        // Project world-up onto the ring plane to find ring's "up"
+        const worldUp: Vec3 = [0, 1, 0];
+        const upInPlane = sub(worldUp, scale(ringNormal, dot(worldUp, ringNormal)));
+        const upLen = length(upInPlane);
+        // Fallback: if path is vertical, use fwd direction projected
+        const ringUp = upLen > 1e-10
+          ? normalize(upInPlane)
+          : normalize(cross(ringNormal, pathDir));
+
+        // Post: from top of ring upward
+        const postHalfWidth = tubeRadius * 0.3;
+        const postThickness = markerRadius * settings.start.ringThickness;
+        const postHeight = markerRadius * 0.8;
+        const topOfRing = addScaled(startPos, ringUp, markerRadius);
+        const topOfPost = addScaled(topOfRing, ringUp, postHeight);
+
+        const post = generateFlatBar(
+          topOfRing, topOfPost,
+          normalize(pathDir), postHalfWidth,
+          ringNormal, postThickness / 2,
+        );
+        meshes.push({ name: `post_${bodyNum}`, material, mesh: post });
+
+        // Arrow: centered at top of post
+        const arrowLen = markerRadius * 3;
+        const sw = tubeRadius * 0.4;
+        const tipLen = arrowLen * 0.25;
+        const tipW = tubeRadius * 1.5;
+        const tipNotch = tipLen * 0.35;
+        const tailLen = arrowLen * 0.15;
+        const tailW = tubeRadius * 1.2;
+        const tailNotch = tailLen * 0.4;
+        const thick = postThickness;
+
+        const velDir = normalize(vel);
+        const arrowOrigin = addScaled(topOfPost, velDir, -arrowLen / 2);
+
+        const arrow = generateFlatArrow(
+          arrowOrigin, vel, arrowLen,
+          sw, tipLen, tipW, tipNotch,
+          tailLen, tailW, tailNotch, thick,
         );
         meshes.push({ name: `arrow_${bodyNum}`, material, mesh: arrow });
       }

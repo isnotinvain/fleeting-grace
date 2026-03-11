@@ -1,7 +1,7 @@
 import type { Vec3 } from "../simulation/types";
 import type { Mesh } from "./tube";
 import { generateFlatRing } from "./flatRing";
-import { combineMeshes } from "./arrow";
+import { combineMeshes } from "./combine";
 import { normalize, cross, dot, length } from "../utils/vec3";
 
 /**
@@ -51,21 +51,13 @@ export function generateArmillary(
 }
 
 /**
- * Generate a single flat ring that touches the path direction,
- * choosing the most vertical of the two candidate rings.
+ * Compute the normal for the most-vertical ring that touches the path.
  *
- * The two rings whose planes contain the path direction have normals
- * `right` and `up`. We pick the one whose normal is most horizontal
+ * Of the two rings whose planes contain the path direction (normals `right`
+ * and `up`), picks the one whose normal is most horizontal
  * (smallest |dot(normal, worldUp)|), so the ring itself is most vertical.
  */
-export function generateSingleRing(
-  center: Vec3,
-  radius: number,
-  ringWidth: number,
-  ringThickness: number,
-  ringPoints: number,
-  direction?: Vec3,
-): Mesh {
+export function computeRingNormal(direction?: Vec3): Vec3 {
   let fwd: Vec3;
   if (direction && length(direction) >= 1e-10) {
     fwd = normalize(direction);
@@ -77,17 +69,31 @@ export function generateSingleRing(
   const right = normalize(cross(fwd, seed));
   const up = cross(fwd, right);
 
-  // Pick the normal that is most horizontal (ring most vertical)
   const worldUp: Vec3 = [0, 1, 0];
-  const normal = Math.abs(dot(right, worldUp)) < Math.abs(dot(up, worldUp))
+  return Math.abs(dot(right, worldUp)) < Math.abs(dot(up, worldUp))
     ? right
     : up;
+}
+
+/**
+ * Generate a single flat ring that touches the path direction,
+ * choosing the most vertical of the two candidate rings.
+ */
+export function generateSingleRing(
+  center: Vec3,
+  radius: number,
+  ringWidth: number,
+  ringThickness: number,
+  ringPoints: number,
+  direction?: Vec3,
+): Mesh {
+  const normal = computeRingNormal(direction);
 
   return generateFlatRing(
     center,
     normal,
-    radius - ringWidth / 2,
-    radius + ringWidth / 2,
+    radius - ringWidth,
+    radius,
     ringThickness,
     ringPoints,
   );
