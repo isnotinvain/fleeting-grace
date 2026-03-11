@@ -298,18 +298,23 @@ export function simulateShatterPhysics(
 
   const nA = fragmentsA.length;
 
-  // Compute density for each body: mass / sphere volume
+  // Compute density for each body: mass / sphere volume.
+  // Normalize so total mass sums to a reasonable value for the physics engine
+  // (Rapier can struggle with extreme values like 1e30). The ratios are preserved.
+  const totalMass = massA + massB;
+  const normMassA = totalMass > 0 ? (massA / totalMass) * 100 : 50;
+  const normMassB = totalMass > 0 ? (massB / totalMass) * 100 : 50;
   const sphereVolA = (4 / 3) * Math.PI * radiusA * radiusA * radiusA;
   const sphereVolB = (4 / 3) * Math.PI * radiusB * radiusB * radiusB;
-  const densityA = massA / sphereVolA;
-  const densityB = massB / sphereVolB;
+  const densityA = normMassA / sphereVolA;
+  const densityB = normMassB / sphereVolB;
 
   // Create Rapier world with zero gravity (space)
   const gravity = new RAPIER.Vector3(0, 0, 0);
   const world = new RAPIER.World(gravity);
 
-  // Track rigid body handles so we can read transforms back
-  const bodyHandles: RAPIER.RigidBodyHandle[] = [];
+  // Track rigid body handle per fragment (null if hull was degenerate)
+  const bodyHandlePerFragment: (RAPIER.RigidBodyHandle | null)[] = [];
 
   for (let i = 0; i < allFragments.length; i++) {
     const frag = allFragments[i];
@@ -330,7 +335,10 @@ export function simulateShatterPhysics(
 
     // Create convex hull collider descriptor
     const colliderDesc = RAPIER.ColliderDesc.convexHull(centeredVerts);
-    if (!colliderDesc) continue; // degenerate hull
+    if (!colliderDesc) {
+      bodyHandlePerFragment.push(null);
+      continue;
+    }
 
     colliderDesc.setMass(fragMass);
     colliderDesc.setRestitution(0.3);
@@ -338,11 +346,12 @@ export function simulateShatterPhysics(
     // Create dynamic rigid body at the fragment's centroid position
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(centroid[0], centroid[1], centroid[2])
-      .setLinvel(vel[0], vel[1], vel[2]);
+      .setLinvel(vel[0], vel[1], vel[2])
+      .setCcdEnabled(true);
 
     const body = world.createRigidBody(bodyDesc);
     world.createCollider(colliderDesc, body);
-    bodyHandles.push(body.handle);
+    bodyHandlePerFragment.push(body.handle);
   }
 
   // Step physics
@@ -352,21 +361,19 @@ export function simulateShatterPhysics(
 
   // Read back transforms and apply to original vertices
   const results: Mesh[] = [];
-  let handleIdx = 0;
 
   for (let i = 0; i < allFragments.length; i++) {
     const frag = allFragments[i];
     const { mesh, centroid } = frag;
+    const handle = bodyHandlePerFragment[i];
 
-    // Some fragments may have been skipped (degenerate hull)
-    if (handleIdx >= bodyHandles.length) {
+    if (handle === null) {
+      // Degenerate hull — return unchanged
       results.push({ vertices: [...mesh.vertices], faces: mesh.faces });
       continue;
     }
 
-    const body = world.getRigidBody(bodyHandles[handleIdx]);
-    handleIdx++;
-
+    const body = world.getRigidBody(handle);
     const pos = body.translation();
     const rot = body.rotation();
 
