@@ -216,3 +216,13 @@ trajectory_viewer.html
 *.obj
 *.mtl
 .DS_Store
+
+# Node / Web app
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+
+# Playwright
+test-results/
+playwright-report/
