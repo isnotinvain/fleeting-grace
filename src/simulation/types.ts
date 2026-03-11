@@ -15,6 +15,8 @@ export type Vec3 = [number, number, number];
 export interface SimulationResult {
   /** Simplified trajectories per body, each an array of Vec3 positions in meters. */
   trajectories: Vec3[][];
+  /** Raw (unsimplified) trajectories per body — one point per integration step. */
+  rawTrajectories: Vec3[][];
   /** Why the simulation ended. */
   reason: TerminationReason;
   /** Number of integration steps performed. */

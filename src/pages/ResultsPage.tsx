@@ -4,6 +4,8 @@ import { useStore } from "../store";
 import { scoreFunctions } from "../scoring/registry";
 import { SimulationScene } from "../components/SimulationScene";
 import { encodeInitialConditionsUrlSafe } from "../utils/base64ic";
+import { normalizationScale } from "../utils/normalize";
+import { bodyRadius } from "../simulation/config";
 
 export function ResultsPage() {
   const navigate = useNavigate();
@@ -21,6 +23,8 @@ export function ResultsPage() {
   const [showIcInput, setShowIcInput] = useState(false);
   const [icInput, setIcInput] = useState("");
   const [icError, setIcError] = useState("");
+  const [playingIdx, setPlayingIdx] = useState<number | null>(null);
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const perPage = gridColumns * gridRows;
 
   // Compute weighted scores and sort indices
@@ -168,14 +172,35 @@ export function ResultsPage() {
             {pageIndices.map((simIdx, gridPos) => {
               const sim = simulations[simIdx]!;
               const scores = perMetricScores[simIdx]!;
+              const normScale = normalizationScale(sim.trajectories);
+              const radii = normScale > 1e-10
+                ? sim.initialConditions.masses.map((m) => bodyRadius(m) * sim.maxSafeScale / normScale)
+                : undefined;
               return (
                 <div
                   key={gridPos}
                   className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden"
                 >
                   {/* 3D scene */}
-                  <div className="aspect-square border-b border-gray-800">
-                    <SimulationScene trajectories={sim.trajectories} />
+                  <div className="aspect-square border-b border-gray-800 relative">
+                    <SimulationScene trajectories={sim.trajectories} rawTrajectories={sim.rawTrajectories} animate={playingIdx === simIdx} sphereRadii={radii} />
+                    {/* Overlay buttons */}
+                    <div className="absolute top-2 right-2 flex gap-1">
+                      <button
+                        onClick={() => setPlayingIdx(playingIdx === simIdx ? null : simIdx)}
+                        className="w-6 h-6 rounded bg-gray-800/80 hover:bg-gray-700 text-gray-300 hover:text-white text-xs flex items-center justify-center transition-colors"
+                        title={playingIdx === simIdx ? "Pause" : "Play"}
+                      >
+                        {playingIdx === simIdx ? "\u23F8" : "\u25B6"}
+                      </button>
+                      <button
+                        onClick={() => setExpandedIdx(simIdx)}
+                        className="w-6 h-6 rounded bg-gray-800/80 hover:bg-gray-700 text-gray-300 hover:text-white text-xs flex items-center justify-center transition-colors"
+                        title="Expand"
+                      >
+                        {"\u26F6"}
+                      </button>
+                    </div>
                   </div>
 
                   {/* Score bars */}
@@ -235,6 +260,51 @@ export function ResultsPage() {
           )}
         </div>
       </div>
+
+      {/* Full-page expanded view */}
+      {expandedIdx !== null && simulations[expandedIdx] && (
+        <div className="fixed inset-0 bg-gray-950 z-50 flex flex-col">
+          <div className="flex items-center justify-between p-4">
+            <div className="flex items-center gap-4">
+              <span className="text-gray-400 text-sm">
+                {simulations[expandedIdx]!.reason} — {simulations[expandedIdx]!.steps} steps
+              </span>
+              <button
+                onClick={() => setPlayingIdx(playingIdx === expandedIdx ? null : expandedIdx)}
+                className="text-gray-400 hover:text-white transition-colors text-sm"
+              >
+                {playingIdx === expandedIdx ? "Pause" : "Play"}
+              </button>
+              <button
+                onClick={() => navigate(`/export/${encodeInitialConditionsUrlSafe(simulations[expandedIdx!]!.initialConditions)}`)}
+                className="text-cyan-500 hover:text-cyan-400 transition-colors text-sm"
+              >
+                Export
+              </button>
+            </div>
+            <button
+              onClick={() => setExpandedIdx(null)}
+              className="text-gray-400 hover:text-white transition-colors text-lg px-2"
+            >
+              {"\u2715"}
+            </button>
+          </div>
+          <div className="flex-1">
+            <SimulationScene
+              trajectories={simulations[expandedIdx]!.trajectories}
+              rawTrajectories={simulations[expandedIdx]!.rawTrajectories}
+              animate={playingIdx === expandedIdx}
+              sphereRadii={(() => {
+                const s = simulations[expandedIdx]!;
+                const ns = normalizationScale(s.trajectories);
+                return ns > 1e-10
+                  ? s.initialConditions.masses.map((m) => bodyRadius(m) * s.maxSafeScale / ns)
+                  : undefined;
+              })()}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

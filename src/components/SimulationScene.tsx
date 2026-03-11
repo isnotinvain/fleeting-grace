@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useMemo, useRef } from "react";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { Vec3 } from "../simulation/types";
 import { normalizeTrajectories } from "../utils/normalize";
@@ -7,9 +7,15 @@ import * as THREE from "three";
 
 const BODY_COLORS = ["#ff6b6b", "#4ecdc4", "#ffe66d"] as const;
 const SPHERE_RADIUS = 0.04;
+const ANIMATION_DURATION = 6; // seconds per loop
 
 interface SimulationSceneProps {
+  /** Simplified trajectories for rendering lines. */
   trajectories: Vec3[][];
+  /** Raw trajectories (uniform dt) for animating spheres. */
+  rawTrajectories?: Vec3[][];
+  animate?: boolean;
+  sphereRadii?: number[];
 }
 
 function TrajectoryLine({ points, color }: { points: Vec3[]; color: string }) {
@@ -33,19 +39,49 @@ function TrajectoryLine({ points, color }: { points: Vec3[]; color: string }) {
   );
 }
 
-function EndpointSphere({ position, color }: { position: Vec3; color: string }) {
+function AnimatedSphere({ trajectory, color, animate, radius }: {
+  trajectory: Vec3[]; color: string; animate: boolean; radius: number;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const timeRef = useRef(0);
+
+  useFrame((_, delta) => {
+    if (!meshRef.current || trajectory.length < 2) return;
+    if (animate) {
+      timeRef.current = (timeRef.current + delta) % ANIMATION_DURATION;
+    }
+    const t = timeRef.current / ANIMATION_DURATION;
+    const idx = t * (trajectory.length - 1);
+    const i = Math.floor(idx);
+    const frac = idx - i;
+    const a = trajectory[Math.min(i, trajectory.length - 1)]!;
+    const b = trajectory[Math.min(i + 1, trajectory.length - 1)]!;
+    meshRef.current.position.set(
+      a[0] + (b[0] - a[0]) * frac,
+      a[1] + (b[1] - a[1]) * frac,
+      a[2] + (b[2] - a[2]) * frac,
+    );
+  });
+
   return (
-    <mesh position={position}>
-      <sphereGeometry args={[SPHERE_RADIUS, 16, 16]} />
-      <meshStandardMaterial color={color} />
+    <mesh ref={meshRef} position={trajectory[0]!}>
+      <sphereGeometry args={[radius, 16, 16]} />
+      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} />
     </mesh>
   );
 }
 
-export function SimulationScene({ trajectories }: SimulationSceneProps) {
-  const normalized = useMemo(
+export function SimulationScene({ trajectories, rawTrajectories, animate = false, sphereRadii }: SimulationSceneProps) {
+  // Simplified trajectories for lines
+  const normalizedLines = useMemo(
     () => normalizeTrajectories(trajectories),
     [trajectories],
+  );
+
+  // Raw trajectories for animation (uniform dt = correct timing)
+  const normalizedRaw = useMemo(
+    () => rawTrajectories ? normalizeTrajectories(rawTrajectories) : normalizedLines,
+    [rawTrajectories, normalizedLines],
   );
 
   return (
@@ -57,14 +93,13 @@ export function SimulationScene({ trajectories }: SimulationSceneProps) {
       <pointLight position={[5, 5, 5]} intensity={0.8} />
       <OrbitControls enableZoom={false} enablePan={false} />
 
-      {normalized.map((traj, i) => {
+      {normalizedLines.map((traj, i) => {
         if (traj.length < 2) return null;
         const color = BODY_COLORS[i % BODY_COLORS.length]!;
         return (
           <group key={i}>
             <TrajectoryLine points={traj} color={color} />
-            <EndpointSphere position={traj[0]!} color={color} />
-            <EndpointSphere position={traj[traj.length - 1]!} color={color} />
+            <AnimatedSphere trajectory={normalizedRaw[i]!} color={color} animate={animate} radius={sphereRadii?.[i] ?? SPHERE_RADIUS} />
           </group>
         );
       })}

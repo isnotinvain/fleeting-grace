@@ -18,6 +18,7 @@ function makeResult(): SimulationResult {
 
   return {
     trajectories: [traj1, traj2, traj3],
+    rawTrajectories: [traj1, traj2, traj3],
     reason: "max_steps",
     steps: 10000,
     initialConditions: {

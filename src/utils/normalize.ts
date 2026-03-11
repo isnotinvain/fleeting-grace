@@ -1,6 +1,28 @@
 import type { Vec3 } from "../simulation/types";
 
 /**
+ * Compute the normalization scale factor for a set of trajectories.
+ * This is half the max bounding-box extent.
+ */
+export function normalizationScale(trajectories: Vec3[][]): number {
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+  for (const traj of trajectories) {
+    for (const p of traj) {
+      if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
+      if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
+      if (p[2] < minZ) minZ = p[2]; if (p[2] > maxZ) maxZ = p[2];
+    }
+  }
+
+  const dx = maxX - minX;
+  const dy = maxY - minY;
+  const dz = maxZ - minZ;
+  return Math.max(dx, dy, dz) / 2;
+}
+
+/**
  * Normalize trajectories to fit within a unit sphere centered at the origin.
  * Returns new arrays — does not mutate input.
  */

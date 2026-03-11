@@ -133,6 +133,7 @@ export function runSimulation(
 
   return {
     trajectories: simplified,
+    rawTrajectories: trajectories,
     reason,
     steps: step,
     initialConditions: ic,

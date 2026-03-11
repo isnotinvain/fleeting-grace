@@ -20,6 +20,7 @@ function makeResult(
 ): SimulationResult {
   return {
     trajectories,
+    rawTrajectories: trajectories,
     reason,
     steps,
     initialConditions: {
