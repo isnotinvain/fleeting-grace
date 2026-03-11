@@ -151,6 +151,22 @@ export function ExportPage() {
                 />
               </>
             )}
+            {(settings.start.style === "armillary" || settings.start.style === "ring") && (
+              <>
+                <NumberSetting
+                  label="Ring width"
+                  value={settings.start.ringWidth}
+                  onChange={(v) => update({ start: { ...settings.start, ringWidth: v } })}
+                  min={0.02} max={0.5} step={0.01}
+                />
+                <NumberSetting
+                  label="Ring thickness"
+                  value={settings.start.ringThickness}
+                  onChange={(v) => update({ start: { ...settings.start, ringThickness: v } })}
+                  min={0.01} max={0.3} step={0.01}
+                />
+              </>
+            )}
             <ToggleSetting
               label="Show velocity arrow"
               value={settings.start.showVelocityArrow}

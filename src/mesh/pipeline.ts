@@ -4,7 +4,7 @@ import type { Mesh } from "./tube";
 import { generateTube } from "./tube";
 import { generateSphere } from "./sphere";
 import { generateArrow } from "./arrow";
-import { generateArmillary } from "./armillary";
+import { generateArmillary, generateSingleRing } from "./armillary";
 import { bodyRadius } from "../simulation/config";
 import { sub, scale, length, normalize } from "../utils/vec3";
 import { generateShatterFragments, initRapier, simulateShatterPhysics, rayMeshIntersect } from "./shatter";
@@ -162,26 +162,26 @@ function generateStartMarker(
       return generateSphere(position, radius, settings.start.segments);
 
     case "armillary": {
-      const ringThickness = radius * 0.1;
-      const stretch = settings.start.velocityStretch ?? 1;
+      const ringWidth = radius * settings.start.ringWidth;
+      const ringThickness = radius * settings.start.ringThickness;
       return generateArmillary(
         position,
         radius,
+        ringWidth,
         ringThickness,
-        Math.min(settings.tubeSegments, 8),
         settings.start.segments,
         direction,
-        stretch,
       );
     }
 
     case "ring": {
-      const ringThickness = radius * 0.1;
-      return generateArmillary(
+      const ringWidth = radius * settings.start.ringWidth;
+      const ringThickness = radius * settings.start.ringThickness;
+      return generateSingleRing(
         position,
         radius,
+        ringWidth,
         ringThickness,
-        Math.min(settings.tubeSegments, 8),
         settings.start.segments,
         direction,
       );

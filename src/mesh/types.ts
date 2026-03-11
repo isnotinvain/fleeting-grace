@@ -9,10 +9,10 @@ export interface StartPositionSettings {
   style: StartStyle;
   scaleFactor: number;
   segments: number;
-  /** Armillary-specific: ring tube thickness (null = auto). */
-  ringThickness: number | null;
-  /** Armillary-specific: velocity-based stretch factor (null = auto). */
-  velocityStretch: number | null;
+  /** Ring/armillary: radial band width as fraction of marker radius. */
+  ringWidth: number;
+  /** Ring/armillary: extrusion thickness as fraction of marker radius. */
+  ringThickness: number;
   /** Whether to show a velocity arrow at the start. */
   showVelocityArrow: boolean;
 }
@@ -41,8 +41,8 @@ export const DEFAULT_START_SETTINGS: StartPositionSettings = {
   style: "armillary",
   scaleFactor: 6.0,
   segments: 64,
-  ringThickness: null,
-  velocityStretch: null,
+  ringWidth: 0.15,
+  ringThickness: 0.05,
   showVelocityArrow: true,
 };
 

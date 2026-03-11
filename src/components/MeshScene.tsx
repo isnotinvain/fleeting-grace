@@ -48,7 +48,7 @@ function MeshObject({ mesh, material }: { mesh: AppMesh; material: string }) {
 
   return (
     <mesh geometry={geometry}>
-      <meshStandardMaterial color={color} side={THREE.DoubleSide} />
+      <meshStandardMaterial color={color} side={THREE.DoubleSide} flatShading />
     </mesh>
   );
 }
