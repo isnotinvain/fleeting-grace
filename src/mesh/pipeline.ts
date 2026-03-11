@@ -140,6 +140,7 @@ export async function generateAllMeshes(
     const shatterMeshes = generateCollisionShatter(
       scaledTrajectories,
       endSphereRadii,
+      ic.masses,
       minTubeRadius,
       settings,
     );
@@ -343,6 +344,7 @@ function findCollidingPair(trajectories: Vec3[][]): [number, number] {
 function generateCollisionShatter(
   scaledTrajectories: Vec3[][],
   endSphereRadii: number[],
+  masses: number[],
   minTubeRadius: number,
   settings: ExportSettings,
 ): NamedMesh[] {
@@ -398,6 +400,10 @@ function generateCollisionShatter(
     fragmentsB,
     scaledVelA,
     scaledVelB,
+    masses[colA],
+    masses[colB],
+    radiusA,
+    radiusB,
     settings.end.physicsSteps,
   );
 

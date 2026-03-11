@@ -100,17 +100,21 @@ describe("generateShatterFragments", () => {
 });
 
 describe("simulateShatterPhysics", () => {
+  // Test sphere radius=1, use arbitrary mass
+  const testMass = 1e30;
+  const testRadius = 1;
+
   it("returns displaced meshes for all fragments", () => {
-    const fragsA = generateShatterFragments([0, 0, 0], 1, [1, 0, 0], 5, 1);
-    const fragsB = generateShatterFragments([2, 0, 0], 1, [-1, 0, 0], 5, 1);
-    const results = simulateShatterPhysics(fragsA, fragsB, [1, 0, 0], [-1, 0, 0], 30);
+    const fragsA = generateShatterFragments([0, 0, 0], testRadius, [1, 0, 0], 5, 1);
+    const fragsB = generateShatterFragments([2, 0, 0], testRadius, [-1, 0, 0], 5, 1);
+    const results = simulateShatterPhysics(fragsA, fragsB, [1, 0, 0], [-1, 0, 0], testMass, testMass, testRadius, testRadius, 30);
     expect(results.length).toBe(fragsA.length + fragsB.length);
   });
 
   it("fragments move away from their original positions", () => {
-    const fragsA = generateShatterFragments([0, 0, 0], 1, [1, 0, 0], 5, 1);
-    const fragsB = generateShatterFragments([3, 0, 0], 1, [-1, 0, 0], 5, 1);
-    const results = simulateShatterPhysics(fragsA, fragsB, [1, 0, 0], [-1, 0, 0], 60);
+    const fragsA = generateShatterFragments([0, 0, 0], testRadius, [1, 0, 0], 5, 1);
+    const fragsB = generateShatterFragments([3, 0, 0], testRadius, [-1, 0, 0], 5, 1);
+    const results = simulateShatterPhysics(fragsA, fragsB, [1, 0, 0], [-1, 0, 0], testMass, testMass, testRadius, testRadius, 60);
 
     const allFrags = [...fragsA, ...fragsB];
     let totalDisplacement = 0;
@@ -137,13 +141,13 @@ describe("simulateShatterPhysics", () => {
   });
 
   it("returns empty array for empty input", () => {
-    const results = simulateShatterPhysics([], [], [1, 0, 0], [-1, 0, 0], 30);
+    const results = simulateShatterPhysics([], [], [1, 0, 0], [-1, 0, 0], testMass, testMass, testRadius, testRadius, 30);
     expect(results).toHaveLength(0);
   });
 
   it("preserves face topology (same faces, just moved vertices)", () => {
-    const frags = generateShatterFragments([0, 0, 0], 1, [1, 0, 0], 4, 1);
-    const results = simulateShatterPhysics(frags, [], [1, 0, 0], [0, 0, 0], 20);
+    const frags = generateShatterFragments([0, 0, 0], testRadius, [1, 0, 0], 4, 1);
+    const results = simulateShatterPhysics(frags, [], [1, 0, 0], [0, 0, 0], testMass, testMass, testRadius, testRadius, 20);
     for (let i = 0; i < frags.length; i++) {
       expect(results[i].faces).toEqual(frags[i].mesh.faces);
       expect(results[i].vertices.length).toBe(frags[i].mesh.vertices.length);

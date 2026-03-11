@@ -8,6 +8,25 @@ import RAPIER from "@dimforge/rapier3d-compat";
 export interface Fragment {
   mesh: Mesh;
   centroid: Vec3;
+  volume: number;
+}
+
+/**
+ * Compute the volume of a convex hull using the divergence theorem.
+ * For each triangle face, accumulates the signed volume of the tetrahedron
+ * formed with the origin: V = (1/6) * sum( v0 . (v1 x v2) )
+ */
+function convexHullVolume(vertices: Vec3[], faces: [number, number, number][]): number {
+  let vol = 0;
+  for (const [a, b, c] of faces) {
+    const v0 = vertices[a];
+    const v1 = vertices[b];
+    const v2 = vertices[c];
+    vol += v0[0] * (v1[1] * v2[2] - v1[2] * v2[1])
+         + v0[1] * (v1[2] * v2[0] - v1[0] * v2[2])
+         + v0[2] * (v1[0] * v2[1] - v1[1] * v2[0]);
+  }
+  return Math.abs(vol) / 6;
 }
 
 let rapierInitialized = false;
@@ -211,9 +230,11 @@ export function generateShatterFragments(
     );
     const fixedFaces = fixWinding(cellPoints, faces, centroid);
 
+    const volume = convexHullVolume(cellPoints, fixedFaces);
     fragments.push({
       mesh: { vertices: cellPoints, faces: fixedFaces },
       centroid,
+      volume,
     });
   }
 
@@ -254,6 +275,10 @@ function applyQuaternion(v: Vec3, q: { x: number; y: number; z: number; w: numbe
  * @param fragmentsB - Fragments from body B (centered at body B's collision position)
  * @param velA - Body A's velocity at collision (scaled for visual spread)
  * @param velB - Body B's velocity at collision (scaled for visual spread)
+ * @param massA - Mass of body A in kg
+ * @param massB - Mass of body B in kg
+ * @param radiusA - Sphere radius of body A (for density calculation)
+ * @param radiusB - Sphere radius of body B (for density calculation)
  * @param simSteps - Number of physics steps to simulate
  * @returns Array of displaced fragment meshes (A fragments first, then B)
  */
@@ -262,12 +287,22 @@ export function simulateShatterPhysics(
   fragmentsB: Fragment[],
   velA: Vec3,
   velB: Vec3,
+  massA: number,
+  massB: number,
+  radiusA: number,
+  radiusB: number,
   simSteps: number = 60,
 ): Mesh[] {
   const allFragments = [...fragmentsA, ...fragmentsB];
   if (allFragments.length === 0) return [];
 
   const nA = fragmentsA.length;
+
+  // Compute density for each body: mass / sphere volume
+  const sphereVolA = (4 / 3) * Math.PI * radiusA * radiusA * radiusA;
+  const sphereVolB = (4 / 3) * Math.PI * radiusB * radiusB * radiusB;
+  const densityA = massA / sphereVolA;
+  const densityB = massB / sphereVolB;
 
   // Create Rapier world with zero gravity (space)
   const gravity = new RAPIER.Vector3(0, 0, 0);
@@ -278,8 +313,12 @@ export function simulateShatterPhysics(
 
   for (let i = 0; i < allFragments.length; i++) {
     const frag = allFragments[i];
-    const { mesh, centroid } = frag;
+    const { mesh, centroid, volume } = frag;
     const vel = i < nA ? velA : velB;
+    const density = i < nA ? densityA : densityB;
+
+    // Fragment mass = density * fragment volume
+    const fragMass = Math.max(density * volume, 1e-6);
 
     // Center vertices on centroid for the collider shape
     const centeredVerts = new Float32Array(mesh.vertices.length * 3);
@@ -293,7 +332,7 @@ export function simulateShatterPhysics(
     const colliderDesc = RAPIER.ColliderDesc.convexHull(centeredVerts);
     if (!colliderDesc) continue; // degenerate hull
 
-    colliderDesc.setMass(1.0);
+    colliderDesc.setMass(fragMass);
     colliderDesc.setRestitution(0.3);
 
     // Create dynamic rigid body at the fragment's centroid position
