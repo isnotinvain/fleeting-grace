@@ -29,6 +29,8 @@ export interface EndPositionSettings {
   fragmentCount: number;
   /** Exploding-specific: physics simulation steps for fragment spread. */
   physicsSteps: number;
+  /** Exploding-specific: strut thickness as a multiplier on the smallest tube radius. */
+  strutThickness: number;
 }
 
 /** All export/mesh settings for a single simulation. */
@@ -55,6 +57,7 @@ export const DEFAULT_END_SETTINGS: EndPositionSettings = {
   segments: 64,
   fragmentCount: 10,
   physicsSteps: 60,
+  strutThickness: 0.15,
 };
 
 export const DEFAULT_EXPORT_SETTINGS: ExportSettings = {

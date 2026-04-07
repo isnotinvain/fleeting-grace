@@ -213,6 +213,12 @@ export function ExportPage() {
                       onChange={(v) => update({ end: { ...settings.end, physicsSteps: v } })}
                       min={10} max={200} step={10}
                     />
+                    <NumberSetting
+                      label="Strut thickness"
+                      value={settings.end.strutThickness}
+                      onChange={(v) => update({ end: { ...settings.end, strutThickness: v } })}
+                      min={0.05} max={1.0} step={0.05}
+                    />
                   </>
                 )}
               </>

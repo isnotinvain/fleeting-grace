@@ -482,7 +482,7 @@ function generateCollisionShatter(
 
   // Add fragment meshes and support struts
   const nA = fragmentsA.length;
-  const strutRadius = minTubeRadius * 0.15;
+  const strutRadius = minTubeRadius * settings.end.strutThickness;
 
   for (let j = 0; j < simResults.length; j++) {
     const fragMesh = simResults[j]!;
@@ -491,12 +491,12 @@ function generateCollisionShatter(
     const isA = j < nA;
     const bodyIdx = isA ? colA : colB;
     const material = BODY_NAMES[bodyIdx]!;
-    const sphereCenter = isA ? endA : endB;
+    const tubeEnd = isA ? endA : endB;
 
     // Fragment mesh
     meshes.push({ name: `end_${BODY_NAMES[bodyIdx]!}`, material, mesh: fragMesh });
 
-    // Support strut: ray from sphere center toward fragment centroid
+    // Support strut: ray from trajectory tube endpoint toward fragment centroid
     const fragCentroid: Vec3 = [0, 0, 0];
     for (const v of fragMesh.vertices) {
       fragCentroid[0] += v[0];
@@ -507,12 +507,12 @@ function generateCollisionShatter(
     fragCentroid[1] /= fragMesh.vertices.length;
     fragCentroid[2] /= fragMesh.vertices.length;
 
-    const rayDir = sub(fragCentroid, sphereCenter);
+    const rayDir = sub(fragCentroid, tubeEnd);
     const rayLen = length(rayDir);
     if (rayLen > 1e-10) {
       const rayDirN = normalize(rayDir);
-      const hitPt = rayMeshIntersect(sphereCenter, rayDirN, fragMesh, rayLen) ?? fragCentroid;
-      const strut = generateTube([sphereCenter, hitPt], strutRadius, strutRadius, 8);
+      const hitPt = rayMeshIntersect(tubeEnd, rayDirN, fragMesh, rayLen) ?? fragCentroid;
+      const strut = generateTube([tubeEnd, hitPt], strutRadius, strutRadius, settings.tubeSegments);
       if (strut.vertices.length > 0) {
         meshes.push({ name: `strut_${BODY_NAMES[bodyIdx]!}`, material, mesh: strut });
       }
