@@ -172,7 +172,7 @@ export function ResultsPage() {
             {pageIndices.map((simIdx, gridPos) => {
               const sim = simulations[simIdx]!;
               const scores = perMetricScores[simIdx]!;
-              const normScale = normalizationScale(sim.trajectories);
+              const normScale = normalizationScale(sim.rawTrajectories);
               const radii = normScale > 1e-10
                 ? sim.initialConditions.masses.map((m) => bodyRadius(m) * sim.maxSafeScale / normScale)
                 : undefined;
@@ -296,7 +296,7 @@ export function ResultsPage() {
               animate={playingIdx === expandedIdx}
               sphereRadii={(() => {
                 const s = simulations[expandedIdx]!;
-                const ns = normalizationScale(s.trajectories);
+                const ns = normalizationScale(s.rawTrajectories);
                 return ns > 1e-10
                   ? s.initialConditions.masses.map((m) => bodyRadius(m) * s.maxSafeScale / ns)
                   : undefined;

@@ -2,7 +2,7 @@ import { useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { Vec3 } from "../simulation/types";
-import { normalizeTrajectories } from "../utils/normalize";
+import { computeBoundingBox, normalizeTrajectories } from "../utils/normalize";
 import * as THREE from "three";
 
 const BODY_COLORS = ["#ff6b6b", "#4ecdc4", "#ffe66d"] as const;
@@ -72,16 +72,22 @@ function AnimatedSphere({ trajectory, color, animate, radius }: {
 }
 
 export function SimulationScene({ trajectories, rawTrajectories, animate = false, sphereRadii }: SimulationSceneProps) {
-  // Simplified trajectories for lines
+  // Compute bounding box from raw trajectories (superset of simplified)
+  // so lines and spheres share the same coordinate space
+  const bbox = useMemo(
+    () => computeBoundingBox(rawTrajectories ?? trajectories),
+    [rawTrajectories, trajectories],
+  );
+
   const normalizedLines = useMemo(
-    () => normalizeTrajectories(trajectories),
-    [trajectories],
+    () => normalizeTrajectories(trajectories, bbox),
+    [trajectories, bbox],
   );
 
   // Raw trajectories for animation (uniform dt = correct timing)
   const normalizedRaw = useMemo(
-    () => rawTrajectories ? normalizeTrajectories(rawTrajectories) : normalizedLines,
-    [rawTrajectories, normalizedLines],
+    () => rawTrajectories ? normalizeTrajectories(rawTrajectories, bbox) : normalizedLines,
+    [rawTrajectories, bbox, normalizedLines],
   );
 
   return (
