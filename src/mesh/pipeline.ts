@@ -157,8 +157,11 @@ export async function generateAllMeshes(
       }
     }
 
-    // End position marker (solid sphere only; exploding handled below)
-    if (settings.end.style === "solid_sphere") {
+    // End position marker: solid sphere for "solid_sphere" mode,
+    // or for non-colliding bodies in "exploding" mode
+    const isColliding = result.reason === "collision" && settings.end.style === "exploding"
+      && findCollidingPair(scaledTrajectories).includes(bodyIdx);
+    if (settings.end.style === "solid_sphere" || (settings.end.style === "exploding" && !isColliding)) {
       const endPos = scaledTraj[scaledTraj.length - 1]!;
       const endRadius = endSphereRadii[bodyIdx]!;
       const sphere = generateSphere(endPos, endRadius, settings.end.segments);
@@ -442,6 +445,40 @@ function generateCollisionShatter(
     radiusB,
     settings.end.physicsSteps,
   );
+
+  // Reposition all fragments so their combined centroid sits at the midpoint
+  // of the two trajectory endpoints. This corrects for the velocity-backup +
+  // Rapier physics moving fragments away from where the tubes end.
+  const allVerts: Vec3[] = [];
+  for (const frag of simResults) {
+    for (const v of frag.vertices) allVerts.push(v);
+  }
+  if (allVerts.length > 0) {
+    const centroid: Vec3 = [0, 0, 0];
+    for (const v of allVerts) {
+      centroid[0] += v[0]; centroid[1] += v[1]; centroid[2] += v[2];
+    }
+    centroid[0] /= allVerts.length;
+    centroid[1] /= allVerts.length;
+    centroid[2] /= allVerts.length;
+
+    const target: Vec3 = [
+      (endA[0] + endB[0]) / 2,
+      (endA[1] + endB[1]) / 2,
+      (endA[2] + endB[2]) / 2,
+    ];
+    const shift: Vec3 = sub(target, centroid);
+
+    for (const frag of simResults) {
+      for (let i = 0; i < frag.vertices.length; i++) {
+        frag.vertices[i] = [
+          frag.vertices[i]![0] + shift[0],
+          frag.vertices[i]![1] + shift[1],
+          frag.vertices[i]![2] + shift[2],
+        ];
+      }
+    }
+  }
 
   // Add fragment meshes and support struts
   const nA = fragmentsA.length;
